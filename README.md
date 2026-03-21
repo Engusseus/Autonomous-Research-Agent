@@ -14,7 +14,7 @@ The solution is organized into four projects:
 - `src/Domain`
   - Core entities and enums
 - `src/Infrastructure`
-  - EF Core persistence, Npgsql/PostgreSQL integration, Semantic Scholar client, placeholder summarization/embedding services, job runner stub
+  - EF Core persistence, Npgsql/PostgreSQL integration, Semantic Scholar client, OpenRouter summarization, local OCR/document extraction, local embedding client, background job runner
 
 Dependency direction:
 
@@ -69,7 +69,7 @@ src/
 
 - Indexed/filterable fields live in first-class columns.
 - LLM outputs, job payloads/results, and analysis results live in `jsonb`.
-- Embeddings stay domain-friendly as `float[]` while the infrastructure layer maps them to a PostgreSQL `vector(1536)` column so future pgvector similarity operators can slot in without changing the public API.
+- Embeddings stay domain-friendly as `float[]` while the infrastructure layer maps them to a PostgreSQL `vector(768)` column for the local Snowflake Arctic embedding model.
 
 ### Job and analysis readiness
 
@@ -139,12 +139,23 @@ src/
 - .NET 9 SDK
 - PostgreSQL 15+
 - pgvector extension enabled in the target database
+- `ocrmypdf` available on the machine for PDF OCR fallback
+- Python 3.11+ for the local embedding service
 
 ### Restore and run
 
 ```bash
 dotnet restore
 dotnet run --project src/Api
+```
+
+Start the local embedding service in a second shell:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r scripts/requirements-local-ml.txt
+python scripts/local_embedding_service.py
 ```
 
 OpenAPI document will be available at:
@@ -183,17 +194,19 @@ Key configuration sections:
 - `ConnectionStrings:Postgres`
 - `Jwt`
 - `SemanticScholar`
+- `OpenRouter`
+- `DocumentProcessing`
+- `LocalEmbedding`
 
-`src/Api/appsettings.json` includes development-safe starter values. Replace the signing key, issuer, audience, connection string, and Semantic Scholar API key before production use.
+`src/Api/appsettings.json` includes development-safe starter values. Replace the signing key, issuer, audience, connection string, and Semantic Scholar API key before production use. For local summaries, set `OPENROUTER_API_KEY`. For local embeddings, keep the Python service running at the configured `LocalEmbedding:BaseUrl`.
 
 ## Extension points
 
-### Replace placeholder AI services
+### Replace local/runtime AI services
 
-- `IEmbeddingService`
 - `ISummarizationService`
 
-Swap the placeholder implementations in `Infrastructure/Services` for real provider-backed services without changing the API surface.
+Summaries stay on OpenRouter. Embeddings are served locally through `scripts/local_embedding_service.py`, and document OCR falls back to `ocrmypdf` when native PDF extraction is weak or empty.
 
 ### Add real background execution
 
@@ -204,8 +217,8 @@ Swap the placeholder implementations in `Infrastructure/Services` for real provi
 ### Improve search quality
 
 - Replace ILIKE keyword search with PostgreSQL full-text search if needed
-- Move semantic ranking from in-memory placeholder logic to pgvector distance queries
-- Tune hybrid ranking weights and retrieval windows without changing search DTOs
+- Move semantic ranking from in-memory cosine scoring to pgvector distance queries
+- Add document-chunk embeddings if you want OCR text itself to become a first-class semantic search source
 
 ### Grow analysis workflows
 

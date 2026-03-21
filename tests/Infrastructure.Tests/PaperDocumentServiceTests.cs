@@ -146,7 +146,12 @@ public sealed class PaperDocumentServiceTests
     private static PaperService CreatePaperService(ApplicationDbContext dbContext, ISemanticScholarClient semanticScholarClient)
     {
         var jobService = new JobService(dbContext, NullLogger<JobService>.Instance);
-        return new PaperService(dbContext, semanticScholarClient, jobService, NullLogger<PaperService>.Instance);
+        return new PaperService(
+            dbContext,
+            semanticScholarClient,
+            jobService,
+            new NoOpEmbeddingIndexingService(),
+            NullLogger<PaperService>.Instance);
     }
 
     private static ApplicationDbContext CreateDbContext()
@@ -164,5 +169,12 @@ public sealed class PaperDocumentServiceTests
             IReadOnlyCollection<string> queries,
             int limit,
             CancellationToken cancellationToken) => Task.FromResult(results);
+    }
+
+    private sealed class NoOpEmbeddingIndexingService : IEmbeddingIndexingService
+    {
+        public Task UpsertPaperAbstractAsync(Paper paper, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task UpsertSummaryAsync(PaperSummary summary, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

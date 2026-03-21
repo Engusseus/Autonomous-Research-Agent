@@ -6,4 +6,6 @@ public sealed class DocumentProcessingOptions
 
     public string StorageRoot { get; set; } = "data/paper-documents";
     public int MaxDownloadSizeMegabytes { get; set; } = 50;
+    public string OcrExecutablePath { get; set; } = "ocrmypdf";
+    public int OcrFallbackMinimumCharacters { get; set; } = 32;
 }

@@ -16,57 +16,100 @@ public sealed class SearchService(
 {
     public async Task<PagedResult<SearchResultModel>> SearchAsync(SearchRequestModel request, CancellationToken cancellationToken)
     {
-        var pattern = QueryHelpers.ToILikePattern(request.Query);
+        if (IsPostgres())
+        {
+            var pattern = QueryHelpers.ToILikePattern(request.Query);
 
-        var filteredQuery = dbContext.Papers
+            var filteredQuery = dbContext.Papers
+                .AsNoTracking()
+                .Where(p =>
+                    EF.Functions.ILike(p.Title, pattern) ||
+                    (p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern)) ||
+                    p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)) ||
+                    p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)));
+
+            var totalCount = await filteredQuery.LongCountAsync(cancellationToken);
+
+            var rankedQuery = filteredQuery
+                .Select(p => new
+                {
+                    Paper = p,
+                    MatchedInTitle = EF.Functions.ILike(p.Title, pattern),
+                    MatchedInAbstract = p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern),
+                    MatchedInSummary = p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)),
+                    MatchedInDocument = p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)),
+                    Score =
+                        (EF.Functions.ILike(p.Title, pattern) ? 1.0 : 0.0) +
+                        ((p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern)) ? 0.6 : 0.0) +
+                        (p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)) ? 0.4 : 0.0) +
+                        (p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)) ? 0.5 : 0.0)
+                });
+
+            var rankedPapers = await rankedQuery
+                .OrderByDescending(x => x.Score)
+                .ThenByDescending(x => x.Paper.UpdatedAt)
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .ToListAsync(cancellationToken);
+
+            var items = rankedPapers
+                .Select(x => ToKeywordResult(x.Paper, request.Query, x.Score, x.MatchedInTitle, x.MatchedInAbstract, x.MatchedInSummary, x.MatchedInDocument))
+                .ToList();
+
+            return new PagedResult<SearchResultModel>(items, request.PageNumber, request.PageSize, totalCount);
+        }
+
+        var papers = await dbContext.Papers
             .AsNoTracking()
-            .Where(p =>
-                EF.Functions.ILike(p.Title, pattern) ||
-                (p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern)) ||
-                p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)) ||
-                p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)));
+            .Include(p => p.Summaries)
+            .Include(p => p.Documents)
+            .ToListAsync(cancellationToken);
 
-        var totalCount = await filteredQuery.LongCountAsync(cancellationToken);
-
-        var rankedQuery = filteredQuery
+        var lowered = request.Query.Trim().ToLowerInvariant();
+        var keywordMatches = papers
             .Select(p => new
             {
                 Paper = p,
-                MatchedInTitle = EF.Functions.ILike(p.Title, pattern),
-                MatchedInAbstract = p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern),
-                MatchedInSummary = p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)),
-                MatchedInDocument = p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)),
+                MatchedInTitle = ContainsIgnoreCase(p.Title, lowered),
+                MatchedInAbstract = ContainsIgnoreCase(p.Abstract, lowered),
+                MatchedInSummary = p.Summaries.Any(s => ContainsIgnoreCase(s.SearchText, lowered)),
+                MatchedInDocument = p.Documents.Any(d => ContainsIgnoreCase(d.ExtractedText, lowered))
+            })
+            .Where(x => x.MatchedInTitle || x.MatchedInAbstract || x.MatchedInSummary || x.MatchedInDocument)
+            .Select(x => new
+            {
+                x.Paper,
+                x.MatchedInTitle,
+                x.MatchedInAbstract,
+                x.MatchedInSummary,
+                x.MatchedInDocument,
                 Score =
-                    (EF.Functions.ILike(p.Title, pattern) ? 1.0 : 0.0) +
-                    ((p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern)) ? 0.6 : 0.0) +
-                    (p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)) ? 0.4 : 0.0) +
-                    (p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)) ? 0.5 : 0.0)
-            });
-
-        var rankedPapers = await rankedQuery
+                    (x.MatchedInTitle ? 1.0 : 0.0) +
+                    (x.MatchedInAbstract ? 0.6 : 0.0) +
+                    (x.MatchedInSummary ? 0.4 : 0.0) +
+                    (x.MatchedInDocument ? 0.5 : 0.0)
+            })
             .OrderByDescending(x => x.Score)
             .ThenByDescending(x => x.Paper.UpdatedAt)
+            .ToList();
+
+        var pagedMatches = keywordMatches
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
-        var items = rankedPapers
+        var keywordItems = pagedMatches
             .Select(x => ToKeywordResult(x.Paper, request.Query, x.Score, x.MatchedInTitle, x.MatchedInAbstract, x.MatchedInSummary, x.MatchedInDocument))
             .ToList();
 
-        return new PagedResult<SearchResultModel>(items, request.PageNumber, request.PageSize, totalCount);
+        return new PagedResult<SearchResultModel>(keywordItems, request.PageNumber, request.PageSize, keywordMatches.Count);
     }
 
     public async Task<PagedResult<SearchResultModel>> SemanticSearchAsync(SemanticSearchRequestModel request, CancellationToken cancellationToken)
     {
         var queryEmbedding = await embeddingService.GenerateQueryEmbeddingAsync(request.Query, cancellationToken);
 
-        var candidates = await dbContext.PaperEmbeddings
-            .AsNoTracking()
-            .Include(e => e.Paper)
-            .Where(e => e.PaperId != null && e.Paper != null && e.Vector != null && e.EmbeddingType == EmbeddingType.PaperAbstract)
-            .Take(request.MaxCandidates)
-            .ToListAsync(cancellationToken);
+        var candidates = await LoadSemanticCandidatesAsync(cancellationToken);
 
         if (candidates.Count == 0)
         {
@@ -81,6 +124,7 @@ public sealed class SearchService(
         }
 
         var ranked = candidates
+            .Where(e => e.PaperId != null && e.Paper != null && e.Vector != null)
             .Select(e => new
             {
                 Embedding = e,
@@ -89,21 +133,45 @@ public sealed class SearchService(
             .OrderByDescending(x => x.Score)
             .ToList();
 
-        var totalCount = ranked.Count;
+        var aggregated = ranked
+            .GroupBy(x => x.Embedding.PaperId ?? x.Embedding.Paper!.Id)
+            .Select(group =>
+            {
+                var best = group.First();
+                foreach (var candidate in group)
+                {
+                    if (candidate.Score > best.Score)
+                    {
+                        best = candidate;
+                    }
+                }
 
-        var limitedRanked = ranked
+                return new
+                {
+                    Paper = best.Embedding.Paper!,
+                    Embedding = best.Embedding,
+                    Score = best.Score
+                };
+            })
+            .OrderByDescending(x => x.Score)
+            .ThenByDescending(x => x.Paper.UpdatedAt)
+            .ToList();
+
+        var totalCount = aggregated.Count;
+
+        var limitedRanked = aggregated
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
             .ToList();
 
         var pageItems = limitedRanked
             .Select(x => new SearchResultModel(
-                x.Embedding.Paper!.Id,
-                x.Embedding.Paper.Title,
-                x.Embedding.Paper.Abstract,
-                x.Embedding.Paper.Authors.AsReadOnly(),
-                x.Embedding.Paper.Year,
-                x.Embedding.Paper.Venue,
+                x.Paper.Id,
+                x.Paper.Title,
+                x.Paper.Abstract,
+                x.Paper.Authors.AsReadOnly(),
+                x.Paper.Year,
+                x.Paper.Venue,
                 x.Score,
                 "semantic",
                 new JsonObject
@@ -189,4 +257,41 @@ public sealed class SearchService(
                 ["matchedInDocument"] = matchedInDocument
             });
     }
+
+    private async Task<List<PaperEmbedding>> LoadSemanticCandidatesAsync(CancellationToken cancellationToken)
+    {
+        if (IsPostgres())
+        {
+            return await dbContext.PaperEmbeddings
+                .AsNoTracking()
+                .Include(e => e.Paper)
+                .Include(e => e.Summary)
+                .Where(e =>
+                    e.PaperId != null &&
+                    e.Paper != null &&
+                    e.Vector != null &&
+                    (e.EmbeddingType == EmbeddingType.PaperAbstract || e.EmbeddingType == EmbeddingType.PaperSummary))
+                .ToListAsync(cancellationToken);
+        }
+
+        return dbContext.PaperEmbeddings.Local
+            .Where(e =>
+                e.PaperId != null &&
+                e.Paper != null &&
+                e.Vector != null &&
+                (e.EmbeddingType == EmbeddingType.PaperAbstract || e.EmbeddingType == EmbeddingType.PaperSummary))
+            .ToList();
+    }
+
+    private static bool ContainsIgnoreCase(string? value, string loweredNeedle)
+    {
+        if (string.IsNullOrWhiteSpace(value) || string.IsNullOrWhiteSpace(loweredNeedle))
+        {
+            return false;
+        }
+
+        return value.Trim().ToLowerInvariant().Contains(loweredNeedle);
+    }
+
+    private bool IsPostgres() => string.Equals(dbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal);
 }

@@ -34,6 +34,7 @@ public static class ServiceCollectionExtensions
         });
         services.Configure<BackgroundJobOptions>(configuration.GetSection(BackgroundJobOptions.SectionName));
         services.Configure<DocumentProcessingOptions>(configuration.GetSection(DocumentProcessingOptions.SectionName));
+        services.Configure<LocalEmbeddingOptions>(configuration.GetSection(LocalEmbeddingOptions.SectionName));
 
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions => npgsqlOptions.UseVector()));
@@ -46,7 +47,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<IAnalysisService, AnalysisService>();
         services.AddScoped<IJobRunner, AutonomousJobRunner>();
-        services.AddSingleton<IEmbeddingService, PlaceholderEmbeddingService>();
+        services.AddScoped<IEmbeddingIndexingService, EmbeddingIndexingService>();
+        services.AddScoped<IDocumentTextExtractor, LocalDocumentTextExtractor>();
         services.AddScoped<ISummarizationService, OpenRouterSummarizationService>();
         services.AddHostedService<DatabaseJobWorker>();
 
@@ -64,6 +66,16 @@ public static class ServiceCollectionExtensions
             client.BaseAddress = new Uri(baseUrl);
             client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
         });
+
+        services.AddHttpClient<LocalEmbeddingHttpClient>((serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalEmbeddingOptions>>().Value;
+            var baseUrl = options.BaseUrl.TrimEnd('/') + "/";
+            client.BaseAddress = new Uri(baseUrl);
+            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+        });
+        services.AddTransient<ILocalEmbeddingClient>(serviceProvider => serviceProvider.GetRequiredService<LocalEmbeddingHttpClient>());
+        services.AddTransient<IEmbeddingService>(serviceProvider => serviceProvider.GetRequiredService<LocalEmbeddingHttpClient>());
 
         services.AddHttpClient("PaperDocuments", client =>
         {

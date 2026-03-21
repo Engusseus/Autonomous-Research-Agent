@@ -10,6 +10,7 @@ namespace AutonomousResearchAgent.Infrastructure.Services;
 
 public sealed class SummaryService(
     ApplicationDbContext dbContext,
+    IEmbeddingIndexingService embeddingIndexingService,
     ILogger<SummaryService> logger) : ISummaryService
 {
     public async Task<IReadOnlyCollection<SummaryModel>> ListForPaperAsync(Guid paperId, CancellationToken cancellationToken)
@@ -62,6 +63,7 @@ public sealed class SummaryService(
 
         dbContext.PaperSummaries.Add(entity);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await embeddingIndexingService.UpsertSummaryAsync(entity, cancellationToken);
 
         logger.LogInformation("Created summary {SummaryId} for paper {PaperId}", entity.Id, entity.PaperId);
         return entity.ToModel();
@@ -88,6 +90,7 @@ public sealed class SummaryService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await embeddingIndexingService.UpsertSummaryAsync(entity, cancellationToken);
         logger.LogInformation("Updated summary {SummaryId}", entity.Id);
 
         return entity.ToModel();

@@ -14,6 +14,7 @@ public sealed class PaperService(
     ApplicationDbContext dbContext,
     ISemanticScholarClient semanticScholarClient,
     IJobService jobService,
+    IEmbeddingIndexingService embeddingIndexingService,
     ILogger<PaperService> logger) : IPaperService
 {
     public async Task<PagedResult<PaperListItem>> ListAsync(PaperQuery query, CancellationToken cancellationToken)
@@ -105,6 +106,7 @@ public sealed class PaperService(
 
         dbContext.Papers.Add(entity);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await embeddingIndexingService.UpsertPaperAbstractAsync(entity, cancellationToken);
 
         logger.LogInformation("Created paper {PaperId}", entity.Id);
         return entity.ToDetail();
@@ -161,6 +163,7 @@ public sealed class PaperService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await embeddingIndexingService.UpsertPaperAbstractAsync(entity, cancellationToken);
         logger.LogInformation("Updated paper {PaperId}", entity.Id);
 
         return entity.ToDetail();
@@ -201,6 +204,7 @@ public sealed class PaperService(
 
         var results = new List<PaperDetail>();
         var queuedDocuments = new List<PaperDocument>();
+        var papersToIndex = new List<Paper>();
         var newCount = 0;
 
         foreach (var candidate in imported)
@@ -239,6 +243,8 @@ public sealed class PaperService(
                 {
                     queuedDocuments.Add(attachedDocument);
                 }
+
+                papersToIndex.Add(existing);
             }
 
             results.Add(existing.ToDetail());
@@ -247,6 +253,13 @@ public sealed class PaperService(
         if (command.StoreImportedPapers)
         {
             await dbContext.SaveChangesAsync(cancellationToken);
+
+            foreach (var paper in papersToIndex
+                .GroupBy(p => p.Id)
+                .Select(group => group.First()))
+            {
+                await embeddingIndexingService.UpsertPaperAbstractAsync(paper, cancellationToken);
+            }
 
             foreach (var document in queuedDocuments)
             {

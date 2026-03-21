@@ -7,7 +7,7 @@ namespace AutonomousResearchAgent.Infrastructure.Persistence.Configurations;
 
 public sealed class PaperEmbeddingConfiguration : IEntityTypeConfiguration<PaperEmbedding>
 {
-    private const int DefaultEmbeddingDimensions = 1536;
+    private const int DefaultEmbeddingDimensions = 768;
 
     public void Configure(EntityTypeBuilder<PaperEmbedding> builder)
     {

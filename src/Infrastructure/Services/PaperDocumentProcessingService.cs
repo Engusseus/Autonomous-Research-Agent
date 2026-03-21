@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
+using System.ComponentModel;
+using System.Diagnostics;
 using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Domain.Entities;
 using AutonomousResearchAgent.Domain.Enums;
@@ -9,7 +10,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using UglyToad.PdfPig;
 
 namespace AutonomousResearchAgent.Infrastructure.Services;
 
@@ -18,9 +18,11 @@ public sealed class PaperDocumentProcessingService(
     IHttpClientFactory httpClientFactory,
     IHostEnvironment hostEnvironment,
     IOptions<DocumentProcessingOptions> options,
-    ILogger<PaperDocumentProcessingService> logger)
+    ILogger<PaperDocumentProcessingService> logger,
+    IDocumentTextExtractor? textExtractor = null)
 {
     private readonly DocumentProcessingOptions _options = options.Value;
+    private readonly IDocumentTextExtractor _textExtractor = textExtractor ?? new LocalDocumentTextExtractor();
 
     public async Task<PaperDocument> ProcessAsync(Guid documentId, CancellationToken cancellationToken)
     {
@@ -63,16 +65,25 @@ public sealed class PaperDocumentProcessingService(
             document.Status = PaperDocumentStatus.Downloaded;
             document.LastError = null;
 
-            var extractedText = ExtractText(bytes, mediaType, fileName);
-            if (!string.IsNullOrWhiteSpace(extractedText))
+            var nativeText = await _textExtractor.ExtractAsync(bytes, mediaType, fileName, cancellationToken);
+            var shouldRunOcr = document.RequiresOcr || IsTooWeak(nativeText);
+            if (shouldRunOcr)
             {
-                document.ExtractedText = extractedText;
+                var ocrText = await ExtractWithOcrAsync(targetPath, cancellationToken);
+                if (string.IsNullOrWhiteSpace(ocrText))
+                {
+                    throw new InvalidStateException("Local OCR did not produce any text.");
+                }
+
+                document.ExtractedText = ocrText.Trim();
                 document.ExtractedAt = DateTimeOffset.UtcNow;
                 document.Status = PaperDocumentStatus.Extracted;
             }
-            else if (document.RequiresOcr)
+            else
             {
-                throw new InvalidStateException("OCR was requested for this document, but no OCR provider is configured yet.");
+                document.ExtractedText = nativeText!.Trim();
+                document.ExtractedAt = DateTimeOffset.UtcNow;
+                document.Status = PaperDocumentStatus.Extracted;
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -82,6 +93,8 @@ public sealed class PaperDocumentProcessingService(
         catch (Exception ex) when (ex is not NotFoundException)
         {
             document.Status = PaperDocumentStatus.Failed;
+            document.ExtractedText = null;
+            document.ExtractedAt = null;
             document.LastError = QueryHelpers.Truncate(ex.Message, 4096);
 
             try
@@ -176,22 +189,115 @@ public sealed class PaperDocumentProcessingService(
         };
     }
 
-    private static string? ExtractText(byte[] bytes, string? mediaType, string fileName)
+    private bool IsTooWeak(string? extractedText)
     {
-        var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        if (mediaType?.StartsWith("text/", StringComparison.OrdinalIgnoreCase) == true || extension is ".txt" or ".md" or ".json" or ".csv")
+        return string.IsNullOrWhiteSpace(extractedText) || extractedText.Trim().Length < _options.OcrFallbackMinimumCharacters;
+    }
+
+    private async Task<string?> ExtractWithOcrAsync(string inputPath, CancellationToken cancellationToken)
+    {
+        var isPdf = string.Equals(Path.GetExtension(inputPath), ".pdf", StringComparison.OrdinalIgnoreCase);
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "ara-ocr", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        var sidecarPath = Path.Combine(tempDirectory, "ocr.txt");
+        var outputPath = Path.Combine(tempDirectory, "ocr.pdf");
+
+        var startInfo = new ProcessStartInfo
         {
-            return Encoding.UTF8.GetString(bytes);
+            FileName = _options.OcrExecutablePath,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+
+        if (isPdf)
+        {
+            startInfo.ArgumentList.Add("--force-ocr");
+            startInfo.ArgumentList.Add("--sidecar");
+            startInfo.ArgumentList.Add(sidecarPath);
+            startInfo.ArgumentList.Add(inputPath);
+            startInfo.ArgumentList.Add(outputPath);
+        }
+        else
+        {
+            startInfo.ArgumentList.Add(inputPath);
+            startInfo.ArgumentList.Add("stdout");
         }
 
-        if (extension == ".pdf" || string.Equals(mediaType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+        try
         {
-            using var stream = new MemoryStream(bytes);
-            using var pdf = PdfDocument.Open(stream);
-            return string.Join("\n\n", pdf.GetPages().Select(p => p.Text).Where(t => !string.IsNullOrWhiteSpace(t))).Trim();
-        }
+            using var process = Process.Start(startInfo)
+                ?? throw new InvalidStateException($"Local OCR executable '{_options.OcrExecutablePath}' could not be started.");
 
-        return null;
+            using var cancellationRegistration = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                }
+                catch
+                {
+                    // Best-effort cleanup only.
+                }
+            });
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync(cancellationToken);
+
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+
+            if (process.ExitCode != 0)
+            {
+                var errorMessage = string.IsNullOrWhiteSpace(stderr)
+                    ? $"Local OCR executable '{_options.OcrExecutablePath}' failed with exit code {process.ExitCode}."
+                    : $"Local OCR executable '{_options.OcrExecutablePath}' failed with exit code {process.ExitCode}: {stderr.Trim()}";
+
+                throw new InvalidStateException(errorMessage);
+            }
+
+            if (File.Exists(sidecarPath))
+            {
+                var sidecarText = await File.ReadAllTextAsync(sidecarPath, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(sidecarText))
+                {
+                    return sidecarText.Trim();
+                }
+            }
+
+            return string.IsNullOrWhiteSpace(stdout) ? null : stdout.Trim();
+        }
+        catch (InvalidStateException)
+        {
+            throw;
+        }
+        catch (Win32Exception ex)
+        {
+            throw new InvalidStateException($"Local OCR executable '{_options.OcrExecutablePath}' could not be started: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidStateException($"Local OCR executable '{_options.OcrExecutablePath}' failed unexpectedly: {ex.Message}");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(tempDirectory))
+                {
+                    Directory.Delete(tempDirectory, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best-effort temp cleanup only.
+            }
+        }
     }
 
     private static string DeriveFileName(string sourceUrl, string? mediaType, Guid documentId)
