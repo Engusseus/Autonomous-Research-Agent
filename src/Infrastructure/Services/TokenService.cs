@@ -27,12 +27,12 @@ public sealed class TokenService(IOptions<JwtOptions> jwtOptions, ILogger<TokenS
         var token = GenerateToken(
             claims =>
             {
-                claims.Append(new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()));
-                claims.Append(new Claim(JwtRegisteredClaimNames.Email, email));
-                claims.Append(new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()));
+                claims.Add(new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()));
+                claims.Add(new Claim(JwtRegisteredClaimNames.Email, email));
+                claims.Add(new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()));
                 foreach (var role in roles)
                 {
-                    claims.Append(new Claim(ClaimTypes.Role, role));
+                    claims.Add(new Claim(ClaimTypes.Role, role));
                 }
             },
             expiresAt);
@@ -46,7 +46,7 @@ public sealed class TokenService(IOptions<JwtOptions> jwtOptions, ILogger<TokenS
         var token = GenerateToken(
             claims =>
             {
-                claims.Append(new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()));
+                claims.Add(new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()));
             },
             expiresAt);
 
