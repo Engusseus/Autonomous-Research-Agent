@@ -1,3 +1,8 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using System;
+
 namespace AutonomousResearchAgent.Api.Startup;
 
 public sealed class PostgresPasswordValidator : IStartupFilter
@@ -6,7 +11,8 @@ public sealed class PostgresPasswordValidator : IStartupFilter
     {
         return app =>
         {
-            var connectionString = app.Configuration.GetConnectionString("Postgres") ?? string.Empty;
+            var configuration = app.ApplicationServices.GetRequiredService<IConfiguration>();
+            var connectionString = configuration.GetConnectionString("Postgres") ?? string.Empty;
 
             if (string.IsNullOrEmpty(connectionString))
             {
