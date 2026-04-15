@@ -1,4 +1,5 @@
 using AutonomousResearchAgent.Application.Analysis;
+using AutonomousResearchAgent.Application.Annotations;
 using AutonomousResearchAgent.Application.Documents;
 using AutonomousResearchAgent.Application.Jobs;
 using AutonomousResearchAgent.Application.Papers;
@@ -83,7 +84,8 @@ internal static class ModelMappingExtensions
             job.TargetEntityId,
             job.CreatedBy,
             job.CreatedAt,
-            job.UpdatedAt);
+            job.UpdatedAt,
+            job.ParentJobId);
 
     public static AnalysisResultModel ToModel(this AnalysisResult result) =>
         new(
@@ -95,5 +97,19 @@ internal static class ModelMappingExtensions
             result.CreatedBy,
             result.CreatedAt,
             result.UpdatedAt);
+
+    public static AnnotationModel ToModel(this PaperAnnotation annotation) =>
+        new(
+            annotation.Id,
+            annotation.PaperId,
+            annotation.UserId,
+            annotation.User?.Username ?? string.Empty,
+            annotation.HighlightedText,
+            annotation.Note,
+            annotation.PageNumber,
+            annotation.OffsetStart,
+            annotation.OffsetEnd,
+            annotation.CreatedAt,
+            annotation.UpdatedAt);
 }
 

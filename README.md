@@ -211,7 +211,7 @@ Summaries stay on OpenRouter. Embeddings are served locally through `scripts/loc
 ### Add real background execution
 
 - Keep using the `jobs` table and `IJobService`
-- Replace or extend `NoOpJobRunner`
+- Replace or extend the job runner implementation as needed
 - Add hosted services or external worker processes that consume the same durable job records
 
 ### Improve search quality

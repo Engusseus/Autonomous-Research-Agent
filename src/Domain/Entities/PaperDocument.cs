@@ -18,4 +18,5 @@ public sealed class PaperDocument : AuditableEntity
     public DateTimeOffset? ExtractedAt { get; set; }
 
     public Paper Paper { get; set; } = null!;
+    public ICollection<DocumentChunk> Chunks { get; set; } = [];
 }

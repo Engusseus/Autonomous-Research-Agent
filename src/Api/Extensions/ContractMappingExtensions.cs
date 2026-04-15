@@ -5,13 +5,17 @@ using AutonomousResearchAgent.Api.Contracts.Jobs;
 using AutonomousResearchAgent.Api.Contracts.Papers;
 using AutonomousResearchAgent.Api.Contracts.Search;
 using AutonomousResearchAgent.Api.Contracts.Summaries;
+using AutonomousResearchAgent.Api.Contracts.Watchlist;
 using AutonomousResearchAgent.Application.Analysis;
+using AutonomousResearchAgent.Application.Citations;
 using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.Documents;
+using AutonomousResearchAgent.Application.Duplicates;
 using AutonomousResearchAgent.Application.Jobs;
 using AutonomousResearchAgent.Application.Papers;
 using AutonomousResearchAgent.Application.Search;
 using AutonomousResearchAgent.Application.Summaries;
+using AutonomousResearchAgent.Application.Watchlist;
 using AutonomousResearchAgent.Domain.Enums;
 
 namespace AutonomousResearchAgent.Api.Extensions;
@@ -121,6 +125,11 @@ public static class ContractMappingExtensions
     public static ImportPapersResponse ToDto(this ImportPapersResult result) =>
         new(result.Papers.Select(p => p.ToDto()).ToList(), result.ImportedCount);
 
+    public static CitationGraphResponse ToDto(this CitationGraphDto model) =>
+        new(
+            model.Nodes.Select(n => new PaperNodeDto(n.Id, n.Title, n.Year, n.CitationCount, n.IsInDatabase)).ToList(),
+            model.Edges.Select(e => new CitationEdgeDto(e.SourceId, e.TargetId, e.Context)).ToList());
+
     public static PaperDocumentDto ToDto(this PaperDocumentModel model) =>
         new(model.Id, model.PaperId, model.SourceUrl, model.FileName, model.MediaType, model.StoragePath, model.Status.ToString(), model.RequiresOcr, model.ExtractedText, model.Metadata, model.LastError, model.DownloadedAt, model.ExtractedAt, model.CreatedAt, model.UpdatedAt);
 
@@ -138,6 +147,33 @@ public static class ContractMappingExtensions
 
     public static AnalysisJobStatusDto ToDto(this AnalysisJobStatusModel model) =>
         new(model.JobId, model.Status.ToString(), model.ErrorMessage, model.Result?.ToDto());
+
+    public static SavedSearchQuery ToApplicationModel(this SavedSearchQueryRequest request, int userId) =>
+        new(request.PageNumber, request.PageSize, userId, request.IsActive);
+
+    public static CreateSavedSearchCommand ToApplicationModel(this CreateSavedSearchRequest request, int userId) =>
+        new(userId, request.Query, request.Field, ParseEnum(request.Schedule, ScheduleType.Manual));
+
+    public static UpdateSavedSearchCommand ToApplicationModel(this UpdateSavedSearchRequest request) =>
+        new(request.Query, request.Field, ParseNullableEnum<ScheduleType>(request.Schedule), request.IsActive);
+
+    public static SavedSearchDto ToDto(this SavedSearchModel model) =>
+        new(model.Id, model.UserId, model.Query, model.Field, model.Schedule.ToString(), model.LastRunAt, model.ResultCount, model.IsActive, model.CreatedAt, model.UpdatedAt);
+
+    public static NotificationQuery ToApplicationModel(this NotificationQueryRequest request, int userId) =>
+        new(request.PageNumber, request.PageSize, userId, request.IsRead);
+
+    public static NotificationDto ToDto(this NotificationModel model) =>
+        new(model.Id, model.UserId, model.Title, model.Message, model.LinkUrl, model.IsRead, model.CreatedAt);
+
+    public static RunSavedSearchResponse ToDto(this RunSavedSearchResult result) =>
+        new(result.NewPapersCount, result.JobId);
+
+    public static DuplicatePairResponse ToDto(this DuplicatePairModel model) =>
+        new(model.Id, model.PaperAId, model.PaperATitle, model.PaperBId, model.PaperBTitle, model.SimilarityScore, model.Status.ToString(), model.ReviewedByUserId, model.ReviewedAt, model.Notes, model.CreatedAt);
+
+    public static DuplicatesResponse ToDto(this DuplicatesResult result) =>
+        new(result.Pairs.Select(p => p.ToDto()).ToList(), result.TotalCount, result.PendingCount);
 
     private static TEnum ParseEnum<TEnum>(string? value, TEnum defaultValue) where TEnum : struct, Enum =>
         Enum.TryParse<TEnum>(value, true, out var parsed) ? parsed : defaultValue;

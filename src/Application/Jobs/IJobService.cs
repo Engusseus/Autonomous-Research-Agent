@@ -8,5 +8,6 @@ public interface IJobService
     Task<JobModel> GetByIdAsync(Guid id, CancellationToken cancellationToken);
     Task<JobModel> CreateAsync(CreateJobCommand command, CancellationToken cancellationToken);
     Task<JobModel> RetryAsync(Guid id, RetryJobCommand command, CancellationToken cancellationToken);
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 }
 

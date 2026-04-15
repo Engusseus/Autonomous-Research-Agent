@@ -7,6 +7,7 @@ using AutonomousResearchAgent.Application.Jobs;
 using AutonomousResearchAgent.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AutonomousResearchAgent.Api.Controllers;
 
@@ -34,6 +35,7 @@ public sealed class JobsController(IJobService jobService) : ControllerBase
 
     [HttpPost("import-papers")]
     [Authorize(Policy = PolicyNames.EditAccess)]
+    [EnableRateLimiting(RateLimiterPolicyNames.JobCreation)]
     [ProducesResponseType(typeof(JobDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<JobDto>> CreateImportJob([FromBody] CreateImportJobRequest request, CancellationToken cancellationToken)
     {
@@ -59,6 +61,7 @@ public sealed class JobsController(IJobService jobService) : ControllerBase
 
     [HttpPost("summarize-paper")]
     [Authorize(Policy = PolicyNames.EditAccess)]
+    [EnableRateLimiting(RateLimiterPolicyNames.JobCreation)]
     [ProducesResponseType(typeof(JobDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<JobDto>> CreateSummarizeJob([FromBody] CreateSummarizeJobRequest request, CancellationToken cancellationToken)
     {
@@ -83,5 +86,15 @@ public sealed class JobsController(IJobService jobService) : ControllerBase
     {
         var result = await jobService.RetryAsync(id, new RetryJobCommand(User.GetActorName(), request.Reason), cancellationToken);
         return Ok(result.ToDto());
+    }
+
+    [HttpDelete("{id:guid}")]
+    [Authorize(Policy = PolicyNames.EditAccess)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteJob(Guid id, CancellationToken cancellationToken)
+    {
+        await jobService.DeleteAsync(id, cancellationToken);
+        return NoContent();
     }
 }

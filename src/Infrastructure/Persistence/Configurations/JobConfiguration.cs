@@ -19,9 +19,15 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
         builder.Property(x => x.ErrorMessage).HasMaxLength(4096);
         builder.Property(x => x.CreatedBy).HasMaxLength(256);
 
+        builder.HasOne(x => x.ParentJob)
+            .WithMany(x => x.ChildJobs)
+            .HasForeignKey(x => x.ParentJobId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasIndex(x => x.Type);
         builder.HasIndex(x => x.Status);
         builder.HasIndex(x => x.TargetEntityId);
+        builder.HasIndex(x => x.ParentJobId);
     }
 }
 

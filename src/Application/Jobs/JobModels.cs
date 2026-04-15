@@ -13,7 +13,8 @@ public sealed record JobModel(
     Guid? TargetEntityId,
     string? CreatedBy,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    Guid? ParentJobId = null);
 
 public sealed record JobQuery(
     int PageNumber = 1,
@@ -25,7 +26,8 @@ public sealed record CreateJobCommand(
     JobType Type,
     JsonNode? Payload,
     Guid? TargetEntityId,
-    string? CreatedBy);
+    string? CreatedBy,
+    Guid? ParentJobId = null);
 
 public sealed record RetryJobCommand(
     string? RequestedBy,

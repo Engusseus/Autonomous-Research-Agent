@@ -4,6 +4,7 @@ using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Application.Analysis;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AutonomousResearchAgent.Api.Controllers;
 
@@ -13,6 +14,7 @@ public sealed class AnalysisController(IAnalysisService analysisService) : Contr
 {
     [HttpPost("compare-papers")]
     [Authorize(Policy = PolicyNames.ReadAccess)]
+    [EnableRateLimiting(RateLimiterPolicyNames.Expensive)]
     [ProducesResponseType(typeof(AnalysisResultDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<AnalysisResultDto>> ComparePapers([FromBody] ComparePapersRequest request, CancellationToken cancellationToken)
     {
@@ -22,6 +24,7 @@ public sealed class AnalysisController(IAnalysisService analysisService) : Contr
 
     [HttpPost("compare-fields")]
     [Authorize(Policy = PolicyNames.ReadAccess)]
+    [EnableRateLimiting(RateLimiterPolicyNames.Expensive)]
     [ProducesResponseType(typeof(AnalysisResultDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<AnalysisResultDto>> CompareFields([FromBody] CompareFieldsRequest request, CancellationToken cancellationToken)
     {
@@ -31,6 +34,7 @@ public sealed class AnalysisController(IAnalysisService analysisService) : Contr
 
     [HttpPost("generate-insights")]
     [Authorize(Policy = PolicyNames.EditAccess)]
+    [EnableRateLimiting(RateLimiterPolicyNames.Expensive)]
     [ProducesResponseType(typeof(AnalysisJobStatusDto), StatusCodes.Status202Accepted)]
     public async Task<ActionResult<AnalysisJobStatusDto>> GenerateInsights([FromBody] GenerateInsightsRequest request, CancellationToken cancellationToken)
     {
@@ -45,5 +49,24 @@ public sealed class AnalysisController(IAnalysisService analysisService) : Contr
     {
         var result = await analysisService.GetByJobIdAsync(jobId, cancellationToken);
         return Ok(result.ToDto());
+    }
+
+    [HttpGet]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(typeof(IReadOnlyList<AnalysisResultDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<AnalysisResultDto>>> GetAnalyses(CancellationToken cancellationToken)
+    {
+        var results = await analysisService.GetAllAsync(cancellationToken);
+        return Ok(results.Select(r => r.ToDto()).ToList());
+    }
+
+    [HttpDelete("{analysisResultId:guid}")]
+    [Authorize(Policy = PolicyNames.EditAccess)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteAnalysisResult(Guid analysisResultId, CancellationToken cancellationToken)
+    {
+        await analysisService.DeleteAsync(analysisResultId, cancellationToken);
+        return NoContent();
     }
 }

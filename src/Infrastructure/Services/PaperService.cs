@@ -281,6 +281,16 @@ public sealed class PaperService(
         return new ImportPapersResult(results, newCount);
     }
 
+    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var entity = await dbContext.Papers.FirstOrDefaultAsync(p => p.Id == id, cancellationToken)
+            ?? throw new NotFoundException(nameof(Paper), id);
+
+        dbContext.Papers.Remove(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Deleted paper {PaperId}", id);
+    }
+
 
     private PaperDocument? TryAttachImportedDocument(Paper paper, SemanticScholarPaperImportModel candidate, HashSet<(Guid PaperId, string SourceUrl)> existingDocUrls)
     {

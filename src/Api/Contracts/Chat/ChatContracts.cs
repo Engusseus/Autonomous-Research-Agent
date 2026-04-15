@@ -1,0 +1,23 @@
+namespace AutonomousResearchAgent.Api.Contracts.Chat;
+
+public sealed class ChatRequest
+{
+    public string Question { get; init; } = string.Empty;
+    public int TopK { get; init; } = 10;
+}
+
+public sealed record ChatSourceDto(
+    Guid PaperId,
+    string PaperTitle,
+    Guid ChunkId,
+    string ChunkText,
+    double RelevanceScore);
+
+public sealed record ChatResponseDto(
+    string Content,
+    ChatSourceDto[] Sources);
+
+public sealed record ChatMessageDto(
+    string Role,
+    string Content,
+    ChatSourceDto[]? Sources);

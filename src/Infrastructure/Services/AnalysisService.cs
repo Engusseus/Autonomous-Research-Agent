@@ -153,6 +153,26 @@ RIGHT FILTER: {command.RightFilter}
         return new AnalysisJobStatusModel(job.Id, job.Status, job.ErrorMessage, result?.ToModel());
     }
 
+    public async Task<IReadOnlyList<AnalysisResultModel>> GetAllAsync(CancellationToken cancellationToken)
+    {
+        var results = await dbContext.AnalysisResults
+            .AsNoTracking()
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return results.Select(r => r.ToModel()).ToList();
+    }
+
+    public async Task DeleteAsync(Guid analysisResultId, CancellationToken cancellationToken)
+    {
+        var entity = await dbContext.AnalysisResults.FirstOrDefaultAsync(r => r.Id == analysisResultId, cancellationToken)
+            ?? throw new NotFoundException(nameof(AnalysisResult), analysisResultId);
+
+        dbContext.AnalysisResults.Remove(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Deleted analysis result {AnalysisResultId}", analysisResultId);
+    }
+
     private Task<List<Paper>> QueryPapersForFilter(string filter, CancellationToken cancellationToken) =>
         QueryHelpers.QueryPapersForFilterAsync(dbContext.Papers, filter, 10, cancellationToken);
 }

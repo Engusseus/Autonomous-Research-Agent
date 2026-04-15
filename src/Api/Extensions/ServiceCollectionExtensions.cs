@@ -1,6 +1,8 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Analysis;
+using AutonomousResearchAgent.Api.Startup;
 using AutonomousResearchAgent.Api.Contracts.Jobs;
 using AutonomousResearchAgent.Api.Contracts.Papers;
 using AutonomousResearchAgent.Api.Contracts.Search;
@@ -9,6 +11,7 @@ using AutonomousResearchAgent.Api.Middleware;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 
 namespace AutonomousResearchAgent.Api.Extensions;
@@ -29,6 +32,8 @@ public static class ServiceCollectionExtensions
         services.AddJwtAuthentication(configuration);
         services.AddAuthorizationPolicies();
         services.AddApiValidators();
+        services.AddStartupFilter<JwtSigningKeyValidator>();
+        services.AddRateLimitingPolicies();
 
         return services;
     }
@@ -103,7 +108,79 @@ public static class ServiceCollectionExtensions
     {
         services.AddEndpointsApiExplorer();
         services.AddOpenApi();
+        services.AddSwaggerGen(options =>
+        {
+            options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Name = "Authorization",
+                Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+                Scheme = "bearer",
+                BearerFormat = "JWT",
+                In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+                Description = "Enter your JWT token"
+            });
+            options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+            {
+                {
+                    new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                    {
+                        Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                        {
+                            Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                            Id = "Bearer"
+                        }
+                    },
+                    Array.Empty<string>()
+                }
+            });
+        });
         services.AddHealthChecks();
+        return services;
+    }
+
+    public static IServiceCollection AddStartupFilter<T>(this IServiceCollection services) where T : class, IStartupFilter
+    {
+        services.AddSingleton<IStartupFilter, T>();
+        return services;
+    }
+
+    public static IServiceCollection AddRateLimitingPolicies(this IServiceCollection services)
+    {
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+            options.AddPolicy(RateLimiterPolicyNames.Expensive, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: context.User.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 10,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    }));
+
+            options.AddPolicy(RateLimiterPolicyNames.JobCreation, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: context.User.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 20,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    }));
+
+            options.AddPolicy(RateLimiterPolicyNames.Standard, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: context.User.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 100,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    }));
+        });
+
         return services;
     }
 }

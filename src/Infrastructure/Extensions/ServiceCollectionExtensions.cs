@@ -1,9 +1,18 @@
 using AutonomousResearchAgent.Application.Analysis;
+using AutonomousResearchAgent.Application.Auth;
+using AutonomousResearchAgent.Application.Citations;
+using AutonomousResearchAgent.Application.Chat;
+using AutonomousResearchAgent.Application.Collections;
 using AutonomousResearchAgent.Application.Documents;
+using AutonomousResearchAgent.Application.Duplicates;
 using AutonomousResearchAgent.Application.Jobs;
+using AutonomousResearchAgent.Application.LiteratureReviews;
 using AutonomousResearchAgent.Application.Papers;
+using AutonomousResearchAgent.Application.ResearchGoals;
 using AutonomousResearchAgent.Application.Search;
 using AutonomousResearchAgent.Application.Summaries;
+using AutonomousResearchAgent.Application.Users;
+using AutonomousResearchAgent.Application.Watchlist;
 using AutonomousResearchAgent.Infrastructure.BackgroundJobs;
 using AutonomousResearchAgent.Infrastructure.External.OpenRouter;
 using AutonomousResearchAgent.Infrastructure.External.SemanticScholar;
@@ -44,12 +53,24 @@ public static class ServiceCollectionExtensions
         services.AddScoped<PaperDocumentProcessingService>();
         services.AddScoped<ISummaryService, SummaryService>();
         services.AddScoped<ISearchService, SearchService>();
+        services.AddScoped<IChatService, ChatService>();
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<IAnalysisService, AnalysisService>();
         services.AddScoped<IJobRunner, AutonomousJobRunner>();
         services.AddScoped<IEmbeddingIndexingService, EmbeddingIndexingService>();
         services.AddScoped<IDocumentTextExtractor, LocalDocumentTextExtractor>();
+        services.AddScoped<ITextChunkingService, RecursiveCharacterTextChunkingService>();
         services.AddScoped<ISummarizationService, OpenRouterSummarizationService>();
+        services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IUserService, UserService>();
+        services.AddScoped<ICitationGraphService, CitationGraphService>();
+        services.AddScoped<IResearchGoalService, ResearchGoalService>();
+        services.AddScoped<IDuplicateDetectionService, DuplicateDetectionService>();
+        services.AddScoped<ICollectionService, CollectionService>();
+        services.AddScoped<ILiteratureReviewService, LiteratureReviewService>();
+        services.AddScoped<ISavedSearchService, SavedSearchService>();
+        services.AddScoped<INotificationService, NotificationService>();
+        services.AddSingleton<ITokenService, TokenService>();
         services.AddHostedService<DatabaseJobWorker>();
 
         services.AddHttpClient<ISemanticScholarClient, SemanticScholarClient>((serviceProvider, client) =>

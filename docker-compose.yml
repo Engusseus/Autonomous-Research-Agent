@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: ara-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: autonomous_research_agent
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  embedding-service:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile
+    container_name: ara-embedding-service
+    ports:
+      - "8001:8001"
+    environment:
+      ARA_EMBED_HOST: "0.0.0.0"
+      ARA_EMBED_PORT: "8001"
+      ARA_EMBED_MODEL: "Snowflake/snowflake-arctic-embed-m-v1.5"
+      ARA_EMBED_DEVICE: "cpu"
+    volumes:
+      - embedding_model_cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: src/Api/Dockerfile
+    container_name: ara-api
+    ports:
+      - "8080:8080"
+    environment:
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=autonomous_research_agent;Username=postgres;Password=change-me"
+      LocalEmbedding__BaseUrl: "http://embedding-service:8001"
+      ASPNETCORE_ENVIRONMENT: "Development"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embedding-service:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  embedding_model_cache:

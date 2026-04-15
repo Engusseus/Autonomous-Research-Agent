@@ -85,3 +85,19 @@ public sealed record ImportPapersResponse(
     IReadOnlyCollection<PaperDetailDto> Papers,
     int ImportedCount);
 
+public sealed record CitationGraphResponse(
+    IReadOnlyCollection<PaperNodeDto> Nodes,
+    IReadOnlyCollection<CitationEdgeDto> Edges);
+
+public sealed record PaperNodeDto(
+    int Id,
+    string Title,
+    int? Year,
+    int CitationCount,
+    bool IsInDatabase);
+
+public sealed record CitationEdgeDto(
+    int SourceId,
+    int TargetId,
+    string? Context);
+

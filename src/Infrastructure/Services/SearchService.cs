@@ -6,6 +6,10 @@ using AutonomousResearchAgent.Domain.Enums;
 using AutonomousResearchAgent.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
+using Npgsql.EntityFrameworkCore.PostgreSQL;
+using NpgsqlTypes;
+using Pgvector;
 
 namespace AutonomousResearchAgent.Infrastructure.Services;
 
@@ -109,18 +113,17 @@ public sealed class SearchService(
     {
         var queryEmbedding = await embeddingService.GenerateQueryEmbeddingAsync(request.Query, cancellationToken);
 
+        if (IsPostgres())
+        {
+            return await SemanticSearchWithDatabaseScoringAsync(queryEmbedding, request, cancellationToken);
+        }
+
         var candidates = await LoadSemanticCandidatesAsync(cancellationToken);
 
         if (candidates.Count == 0)
         {
             logger.LogInformation("No embeddings available, falling back to keyword search for semantic query.");
-            var fallback = await SearchAsync(new SearchRequestModel(request.Query, request.PageNumber, request.PageSize), cancellationToken);
-
-            var mappedFallback = fallback.Items
-                .Select(item => item with { MatchType = "semantic-fallback", Score = Math.Max(item.Score, 0.1) })
-                .ToList();
-
-            return new PagedResult<SearchResultModel>(mappedFallback, fallback.PageNumber, fallback.PageSize, fallback.TotalCount);
+            return await FallbackToKeywordSearchAsync(request, cancellationToken);
         }
 
         var ranked = candidates
@@ -182,6 +185,96 @@ public sealed class SearchService(
             .ToList();
 
         return new PagedResult<SearchResultModel>(pageItems, request.PageNumber, request.PageSize, totalCount);
+    }
+
+    private async Task<PagedResult<SearchResultModel>> SemanticSearchWithDatabaseScoringAsync(float[] queryEmbedding, SemanticSearchRequestModel request, CancellationToken cancellationToken)
+    {
+        await using var command = dbContext.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $@"
+            SELECT pe.""Id"", (pe.""Vector"" <-> @query_embedding) AS ""Distance""
+            FROM ""paper_embeddings"" pe
+            WHERE pe.""PaperId"" IS NOT NULL
+              AND pe.""Vector"" IS NOT NULL
+              AND (pe.""EmbeddingType"" = 'PaperAbstract' OR pe.""EmbeddingType"" = 'PaperSummary')
+            ORDER BY pe.""Vector"" <-> @query_embedding
+            LIMIT {request.MaxCandidates}";
+
+        var embeddingParam = new NpgsqlParameter("query_embedding", new Vector(queryEmbedding));
+        command.Parameters.Add(embeddingParam);
+
+        await dbContext.Database.OpenConnectionAsync(cancellationToken);
+        using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var embeddingIds = new List<(Guid Id, double Distance)>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            embeddingIds.Add((reader.GetGuid(0), 1 - reader.GetDouble(1)));
+        }
+        await reader.CloseAsync();
+
+        if (embeddingIds.Count == 0)
+        {
+            logger.LogInformation("No embeddings available, falling back to keyword search for semantic query.");
+            return await FallbackToKeywordSearchAsync(request, cancellationToken);
+        }
+
+        var ids = embeddingIds.Select(x => x.Id).ToList();
+        var candidates = await dbContext.PaperEmbeddings
+            .AsNoTracking()
+            .Include(e => e.Paper)
+            .Where(e => ids.Contains(e.Id))
+            .ToListAsync(cancellationToken);
+
+        var scoreMap = embeddingIds.ToDictionary(x => x.Id, x => x.Distance);
+
+        var aggregated = candidates
+            .GroupBy(x => x.PaperId ?? x.Paper!.Id)
+            .Select(group =>
+            {
+                var bestEmbedding = group.OrderByDescending(e => scoreMap.GetValueOrDefault(e.Id, 0)).First();
+                return new
+                {
+                    Paper = bestEmbedding.Paper!,
+                    Embedding = bestEmbedding,
+                    Score = scoreMap.GetValueOrDefault(bestEmbedding.Id, 0)
+                };
+            })
+            .OrderByDescending(x => x.Score)
+            .ThenByDescending(x => x.Paper.UpdatedAt)
+            .ToList();
+
+        var totalCount = aggregated.Count;
+        var items = aggregated
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .Select(x => new SearchResultModel(
+                x.Paper.Id,
+                x.Paper.Title,
+                x.Paper.Abstract,
+                x.Paper.Authors.AsReadOnly(),
+                x.Paper.Year,
+                x.Paper.Venue,
+                x.Score,
+                "semantic",
+                new JsonObject
+                {
+                    ["modelName"] = x.Embedding.ModelName,
+                    ["embeddingType"] = x.Embedding.EmbeddingType.ToString()
+                }))
+            .ToList();
+
+        return new PagedResult<SearchResultModel>(items, request.PageNumber, request.PageSize, totalCount);
+    }
+
+    private async Task<PagedResult<SearchResultModel>> FallbackToKeywordSearchAsync(SemanticSearchRequestModel request, CancellationToken cancellationToken)
+    {
+        var fallback = await SearchAsync(new SearchRequestModel(request.Query, request.PageNumber, request.PageSize), cancellationToken);
+
+        var mappedFallback = fallback.Items
+            .Select(item => item with { MatchType = "semantic-fallback", Score = Math.Max(item.Score, 0.1) })
+            .ToList();
+
+        return new PagedResult<SearchResultModel>(mappedFallback, fallback.PageNumber, fallback.PageSize, fallback.TotalCount);
     }
 
     // TODO: These two searches are independent and could run concurrently via Task.WhenAll
@@ -270,7 +363,7 @@ public sealed class SearchService(
                     e.PaperId != null &&
                     e.Paper != null &&
                     e.Vector != null &&
-                    (e.EmbeddingType == EmbeddingType.PaperAbstract || e.EmbeddingType == EmbeddingType.PaperSummary))
+                    (e.EmbeddingType == EmbeddingType.PaperAbstract || e.EmbeddingType == EmbeddingType.PaperSummary || e.EmbeddingType == EmbeddingType.DocumentChunk))
                 .ToListAsync(cancellationToken);
         }
 
@@ -279,7 +372,7 @@ public sealed class SearchService(
                 e.PaperId != null &&
                 e.Paper != null &&
                 e.Vector != null &&
-                (e.EmbeddingType == EmbeddingType.PaperAbstract || e.EmbeddingType == EmbeddingType.PaperSummary))
+                (e.EmbeddingType == EmbeddingType.PaperAbstract || e.EmbeddingType == EmbeddingType.PaperSummary || e.EmbeddingType == EmbeddingType.DocumentChunk))
             .ToList();
     }
 

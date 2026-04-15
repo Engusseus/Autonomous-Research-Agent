@@ -57,7 +57,13 @@ const STATUS_STYLES = {
 
   // Document statuses
   Downloaded: 'badge-blue',
+  Pending: 'badge-yellow',
+  Queued: 'badge-blue',
   Extracted: 'badge-green',
+
+  // Literature Review statuses
+  Draft: 'badge-gray',
+  Generating: 'badge-blue',
 };
 
 export function badge(status) {
@@ -236,3 +242,170 @@ export function jsonBlock(data) {
   const str = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
   return h('pre', { className: 'json-block' }, str || '\u2014');
 }
+
+// ── Notification Bell ─────────────────────────────
+
+let notificationBellInstance = null;
+
+export function notificationBell({ onNavigate }) {
+  if (notificationBellInstance) {
+    return notificationBellInstance;
+  }
+
+  const container = h('div', { className: 'notification-bell', id: 'notification-bell' });
+
+  let unreadCount = 0;
+  let dropdownOpen = false;
+  let notifications = [];
+  let pollingTimer = null;
+
+  async function fetchUnreadCount() {
+    try {
+      const { getUnreadNotificationCount } = await import('../api.js');
+      const data = await getUnreadNotificationCount();
+      unreadCount = data.count;
+      updateBadge();
+    } catch {
+      // Silently fail
+    }
+  }
+
+  async function fetchNotifications() {
+    try {
+      const { getNotifications } = await import('../api.js');
+      const data = await getNotifications({ pageSize: 5, isRead: false });
+      notifications = data.items || [];
+      renderDropdown();
+    } catch {
+      // Silently fail
+    }
+  }
+
+  function updateBadge() {
+    const badge = container.querySelector('.bell-badge');
+    if (badge) {
+      badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+      badge.hidden = unreadCount === 0;
+    }
+  }
+
+  function renderDropdown() {
+    const existing = container.querySelector('.bell-dropdown');
+    if (existing) existing.remove();
+
+    if (!dropdownOpen) return;
+
+    const dropdown = h('div', { className: 'bell-dropdown' });
+
+    if (notifications.length === 0) {
+      dropdown.appendChild(h('div', { className: 'bell-empty' }, 'No new notifications'));
+    } else {
+      const list = h('div', { className: 'bell-list' });
+      for (const n of notifications) {
+        const item = h('div', {
+          className: 'bell-item',
+          onClick: () => {
+            if (n.linkUrl) {
+              window.location.hash = n.linkUrl;
+            }
+            closeDropdown();
+          }
+        },
+          h('div', { className: 'bell-item-title' }, n.title),
+          h('div', { className: 'bell-item-message' }, truncate(n.message, 60)),
+          h('div', { className: 'bell-item-time' }, timeAgo(n.createdAt))
+        );
+        list.appendChild(item);
+      }
+      dropdown.appendChild(list);
+
+      const footer = h('div', { className: 'bell-footer' },
+        h('button', {
+          className: 'bell-mark-read',
+          onClick: async () => {
+            try {
+              const { markAllNotificationsAsRead } = await import('../api.js');
+              await markAllNotificationsAsRead();
+              unreadCount = 0;
+              updateBadge();
+              closeDropdown();
+              if (onNavigate) onNavigate();
+            } catch {
+              // Silently fail
+            }
+          }
+        }, 'MARK ALL READ')
+      );
+      dropdown.appendChild(footer);
+    }
+
+    container.appendChild(dropdown);
+  }
+
+  function toggleDropdown() {
+    dropdownOpen = !dropdownOpen;
+    if (dropdownOpen) {
+      fetchNotifications();
+      renderDropdown();
+      document.addEventListener('click', handleOutsideClick);
+    } else {
+      closeDropdown();
+    }
+  }
+
+  function closeDropdown() {
+    dropdownOpen = false;
+    const dropdown = container.querySelector('.bell-dropdown');
+    if (dropdown) dropdown.remove();
+    document.removeEventListener('click', handleOutsideClick);
+  }
+
+  function handleOutsideClick(e) {
+    if (!container.contains(e.target)) {
+      closeDropdown();
+    }
+  }
+
+  const bellBtn = h('button', {
+    className: 'bell-button',
+    type: 'button',
+    onClick: (e) => {
+      e.stopPropagation();
+      toggleDropdown();
+    }
+  },
+    h('svg', {
+      className: 'bell-icon',
+      viewBox: '0 0 20 20',
+      fill: 'currentColor'
+    },
+      h('path', { 'd': 'M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z' })
+    ),
+    h('span', { className: 'bell-badge', hidden: true }, '0')
+  );
+
+  container.appendChild(bellBtn);
+
+  function startPolling() {
+    stopPolling();
+    fetchUnreadCount();
+    pollingTimer = setInterval(fetchUnreadCount, 30_000);
+  }
+
+  function stopPolling() {
+    if (pollingTimer) {
+      clearInterval(pollingTimer);
+      pollingTimer = null;
+    }
+  }
+
+  startPolling();
+
+  notificationBellInstance = {
+    refresh: fetchUnreadCount,
+    destroy: stopPolling
+  };
+
+  return notificationBellInstance;
+}
+

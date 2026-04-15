@@ -65,6 +65,40 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("analysis_results", (string)null);
                 });
 
+            modelBuilder.Entity("AutonomousResearchAgent.Domain.Entities.DocumentChunk", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ChunkIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("PaperDocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("TextLength")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PaperDocumentId");
+
+                    b.HasIndex("PaperDocumentId", "ChunkIndex")
+                        .IsUnique();
+
+                    b.ToTable("document_chunks", (string)null);
+                });
+
             modelBuilder.Entity("AutonomousResearchAgent.Domain.Entities.Job", b =>
                 {
                     b.Property<Guid>("Id")
@@ -258,6 +292,9 @@ namespace Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("DocumentChunkId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("EmbeddingType")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -282,11 +319,17 @@ namespace Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DocumentChunkId");
+
                     b.HasIndex("EmbeddingType");
 
                     b.HasIndex("PaperId");
 
                     b.HasIndex("SummaryId");
+
+                    b.HasIndex("Vector")
+                        .IsUnique(false)
+                        .HasDatabaseName("IX_paper_embeddings_vector_hnsw");
 
                     b.ToTable("paper_embeddings", (string)null);
                 });
@@ -356,6 +399,17 @@ namespace Infrastructure.Persistence.Migrations
                     b.Navigation("Job");
                 });
 
+            modelBuilder.Entity("AutonomousResearchAgent.Domain.Entities.DocumentChunk", b =>
+                {
+                    b.HasOne("AutonomousResearchAgent.Domain.Entities.PaperDocument", "PaperDocument")
+                        .WithMany("Chunks")
+                        .HasForeignKey("PaperDocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PaperDocument");
+                });
+
             modelBuilder.Entity("AutonomousResearchAgent.Domain.Entities.PaperDocument", b =>
                 {
                     b.HasOne("AutonomousResearchAgent.Domain.Entities.Paper", "Paper")
@@ -369,6 +423,11 @@ namespace Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("AutonomousResearchAgent.Domain.Entities.PaperEmbedding", b =>
                 {
+                    b.HasOne("AutonomousResearchAgent.Domain.Entities.DocumentChunk", "DocumentChunk")
+                        .WithMany("Embeddings")
+                        .HasForeignKey("DocumentChunkId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("AutonomousResearchAgent.Domain.Entities.Paper", "Paper")
                         .WithMany("Embeddings")
                         .HasForeignKey("PaperId")
@@ -378,6 +437,8 @@ namespace Infrastructure.Persistence.Migrations
                         .WithMany("Embeddings")
                         .HasForeignKey("SummaryId")
                         .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("DocumentChunk");
 
                     b.Navigation("Paper");
 
@@ -395,6 +456,11 @@ namespace Infrastructure.Persistence.Migrations
                     b.Navigation("Paper");
                 });
 
+            modelBuilder.Entity("AutonomousResearchAgent.Domain.Entities.DocumentChunk", b =>
+                {
+                    b.Navigation("Embeddings");
+                });
+
             modelBuilder.Entity("AutonomousResearchAgent.Domain.Entities.Paper", b =>
                 {
                     b.Navigation("Documents");
@@ -402,6 +468,11 @@ namespace Infrastructure.Persistence.Migrations
                     b.Navigation("Embeddings");
 
                     b.Navigation("Summaries");
+                });
+
+            modelBuilder.Entity("AutonomousResearchAgent.Domain.Entities.PaperDocument", b =>
+                {
+                    b.Navigation("Chunks");
                 });
 
             modelBuilder.Entity("AutonomousResearchAgent.Domain.Entities.PaperSummary", b =>

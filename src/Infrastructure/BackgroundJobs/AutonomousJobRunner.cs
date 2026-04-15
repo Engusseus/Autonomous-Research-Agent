@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using AutonomousResearchAgent.Application.Duplicates;
 using AutonomousResearchAgent.Application.Jobs;
 using AutonomousResearchAgent.Application.Papers;
 using AutonomousResearchAgent.Application.Summaries;
@@ -20,33 +22,80 @@ public sealed class AutonomousJobRunner(
     ISummaryService summaryService,
     ISummarizationService summarizationService,
     PaperDocumentProcessingService paperDocumentProcessingService,
+    ITextChunkingService textChunkingService,
+    IEmbeddingIndexingService embeddingIndexingService,
+    IDuplicateDetectionService duplicateDetectionService,
+    IJobService jobService,
     OpenRouterChatClient openRouterChatClient,
+    ISemanticScholarClient semanticScholarClient,
     IOptions<OpenRouterOptions> options,
-    ILogger<AutonomousJobRunner> logger) : IJobRunner
+    ILoggerFactory loggerFactory) : IJobRunner
 {
     private readonly OpenRouterOptions _options = options.Value;
+    private readonly ILogger<AutonomousJobRunner> _logger = loggerFactory.CreateLogger<AutonomousJobRunner>();
+    private readonly ILogger<TrendAnalysisService> _trendAnalysisLogger = loggerFactory.CreateLogger<TrendAnalysisService>();
+    private static readonly ActivitySource ActivitySource = new("AutonomousJobRunner");
 
     public async Task RunAsync(Job job, CancellationToken cancellationToken)
     {
-        switch (job.Type)
-        {
-            case JobType.ImportPapers:
-                await RunImportPapersAsync(job, cancellationToken);
-                break;
-            case JobType.SummarizePaper:
-                await RunSummarizePaperAsync(job, cancellationToken);
-                break;
-            case JobType.Analysis:
-                await RunGenerateInsightsAsync(job, cancellationToken);
-                break;
-            case JobType.ProcessPaperDocument:
-                await RunProcessPaperDocumentAsync(job, cancellationToken);
-                break;
-            default:
-                throw new InvalidOperationException($"Unsupported job type '{job.Type}'.");
-        }
+        using var activity = ActivitySource.StartActivity("JobExecution", ActivityKind.Internal);
+        activity?.SetTag("job.id", job.Id.ToString());
+        activity?.SetTag("job.type", job.Type.ToString());
 
-        logger.LogInformation("Completed job {JobId} ({JobType})", job.Id, job.Type);
+        try
+        {
+            switch (job.Type)
+            {
+                case JobType.ImportPapers:
+                    await RunImportPapersAsync(job, cancellationToken);
+                    break;
+                case JobType.SummarizePaper:
+                    await RunSummarizePaperAsync(job, cancellationToken);
+                    break;
+                case JobType.Analysis:
+                    await RunGenerateInsightsAsync(job, cancellationToken);
+                    break;
+                case JobType.ProcessPaperDocument:
+                    await RunProcessPaperDocumentAsync(job, cancellationToken);
+                    break;
+                case JobType.TrendAnalysis:
+                    await RunTrendAnalysisAsync(job, cancellationToken);
+                    break;
+                case JobType.ResearchGoal:
+                    await RunResearchGoalAsync(job, cancellationToken);
+                    break;
+                case JobType.SearchPapers:
+                    await RunSearchPapersAsync(job, cancellationToken);
+                    break;
+                case JobType.ImportPaper:
+                    await RunImportPaperAsync(job, cancellationToken);
+                    break;
+                case JobType.SummarizePaperChild:
+                    await RunSummarizePaperChildAsync(job, cancellationToken);
+                    break;
+                case JobType.AnalyzePaper:
+                    await RunAnalyzePaperAsync(job, cancellationToken);
+                    break;
+                case JobType.GenerateReport:
+                    await RunGenerateReportAsync(job, cancellationToken);
+                    break;
+                case JobType.DuplicateDetection:
+                    await RunDuplicateDetectionAsync(job, cancellationToken);
+                    break;
+                case JobType.WatchlistPolling:
+                    await RunWatchlistPollingAsync(job, cancellationToken);
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unsupported job type '{job.Type}'.");
+            }
+
+            _logger.LogInformation("Completed job {JobId} ({JobType})", job.Id, job.Type);
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
     }
 
     private async Task RunImportPapersAsync(Job job, CancellationToken cancellationToken)
@@ -68,25 +117,33 @@ public sealed class AutonomousJobRunner(
     {
         var payload = ParsePayload(job);
         var paperId = payload["paperId"]?.GetValue<Guid>() ?? throw new InvalidOperationException("paperId is required.");
-        var requestedModelName = payload["modelName"]?.GetValue<string>() ?? _options.Model;
-        var promptVersion = payload["promptVersion"]?.GetValue<string>() ?? "v1";
 
-        var paper = await paperService.GetByIdAsync(paperId, cancellationToken);
-        var summary = await summarizationService.GenerateSummaryAsync(paper, requestedModelName, promptVersion, cancellationToken);
-
-        var keyFindings = summary?["keyFindings"]?.AsArray().Select(x => x?.GetValue<string>() ?? string.Empty) ?? [];
-        var searchText = string.Join(" ", new[]
+        using (_logger.BeginScope(new KeyValuePair<string, object?>[]
         {
-            summary?["shortSummary"]?.GetValue<string>(),
-            summary?["longSummary"]?.GetValue<string>(),
-            string.Join(" ", keyFindings)
-        }.Where(x => !string.IsNullOrWhiteSpace(x)));
+            new("JobId", job.Id),
+            new("PaperId", paperId)
+        }))
+        {
+            var requestedModelName = payload["modelName"]?.GetValue<string>() ?? _options.Model;
+            var promptVersion = payload["promptVersion"]?.GetValue<string>() ?? "v1";
 
-        var created = await summaryService.CreateAsync(
-            new CreateSummaryCommand(paperId, _options.Model, promptVersion, SummaryStatus.Generated, summary, searchText),
-            cancellationToken);
+            var paper = await paperService.GetByIdAsync(paperId, cancellationToken);
+            var summary = await summarizationService.GenerateSummaryAsync(paper, requestedModelName, promptVersion, cancellationToken);
 
-        job.ResultJson = JsonSerializer.SerializeToNode(new { summaryId = created.Id, paperId = created.PaperId, modelName = created.ModelName })?.ToJsonString();
+            var keyFindings = summary?["keyFindings"]?.AsArray().Select(x => x?.GetValue<string>() ?? string.Empty) ?? [];
+            var searchText = string.Join(" ", new[]
+            {
+                summary?["shortSummary"]?.GetValue<string>(),
+                summary?["longSummary"]?.GetValue<string>(),
+                string.Join(" ", keyFindings)
+            }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+            var created = await summaryService.CreateAsync(
+                new CreateSummaryCommand(paperId, _options.Model, promptVersion, SummaryStatus.Generated, summary, searchText),
+                cancellationToken);
+
+            job.ResultJson = JsonSerializer.SerializeToNode(new { summaryId = created.Id, paperId = created.PaperId, modelName = created.ModelName })?.ToJsonString();
+        }
     }
 
     private async Task RunGenerateInsightsAsync(Job job, CancellationToken cancellationToken)
@@ -117,10 +174,19 @@ confidence: number
         var result = await openRouterChatClient.CreateJsonCompletionAsync(systemPrompt, userPrompt, cancellationToken);
 
         var analysis = await dbContext.AnalysisResults.FirstOrDefaultAsync(r => r.JobId == job.Id, cancellationToken);
-        if (analysis is not null)
+        if (analysis is null)
         {
-            analysis.ResultJson = result?.ToJsonString();
+            analysis = new AnalysisResult
+            {
+                JobId = job.Id,
+                AnalysisType = AnalysisType.GenerateInsights,
+                InputSetJson = new JsonObject { ["filter"] = filter }.ToJsonString()
+            };
+            dbContext.AnalysisResults.Add(analysis);
         }
+
+        analysis.ResultJson = result?.ToJsonString();
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         job.ResultJson = result?.ToJsonString();
     }
@@ -131,6 +197,12 @@ confidence: number
         var documentId = payload["documentId"]?.GetValue<Guid>() ?? throw new InvalidOperationException("documentId is required.");
 
         var document = await paperDocumentProcessingService.ProcessAsync(documentId, cancellationToken);
+
+        if (document.Status == PaperDocumentStatus.Extracted && !string.IsNullOrWhiteSpace(document.ExtractedText))
+        {
+            await ProcessDocumentChunksAsync(document, cancellationToken);
+        }
+
         job.ResultJson = JsonSerializer.SerializeToNode(new
         {
             documentId = document.Id,
@@ -138,6 +210,42 @@ confidence: number
             storagePath = document.StoragePath,
             extractedAt = document.ExtractedAt
         })?.ToJsonString();
+    }
+
+    private async Task ProcessDocumentChunksAsync(Domain.Entities.PaperDocument document, CancellationToken cancellationToken)
+    {
+        var existingChunks = await dbContext.DocumentChunks
+            .Where(c => c.PaperDocumentId == document.Id)
+            .ToListAsync(cancellationToken);
+        dbContext.DocumentChunks.RemoveRange(existingChunks);
+
+        var existingEmbeddings = await dbContext.PaperEmbeddings
+            .Where(e => e.DocumentChunkId != null && e.EmbeddingType == EmbeddingType.DocumentChunk &&
+                dbContext.DocumentChunks.Any(c => c.Id == e.DocumentChunkId && c.PaperDocumentId == document.Id))
+            .ToListAsync(cancellationToken);
+        dbContext.PaperEmbeddings.RemoveRange(existingEmbeddings);
+
+        var textChunks = textChunkingService.ChunkText(document.ExtractedText!);
+        if (textChunks.Count == 0)
+        {
+            return;
+        }
+
+        var chunks = textChunks.Select(tc => new DocumentChunk
+        {
+            PaperDocumentId = document.Id,
+            ChunkIndex = tc.Index,
+            Text = tc.Text,
+            TextLength = tc.Text.Length,
+            StartPosition = tc.StartPosition,
+            EndPosition = tc.EndPosition
+        }).ToList();
+
+        dbContext.DocumentChunks.AddRange(chunks);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        await embeddingIndexingService.UpsertDocumentChunksAsync(chunks, cancellationToken);
+        _logger.LogInformation("Created {ChunkCount} chunks and embeddings for document {DocumentId}", chunks.Count, document.Id);
     }
 
     private static string BuildInsightsPrompt(string filter, IReadOnlyCollection<Domain.Entities.Paper> papers)
@@ -154,6 +262,406 @@ confidence: number
         }
 
         return string.Join("\n\n", lines);
+    }
+
+    private async Task RunTrendAnalysisAsync(Job job, CancellationToken cancellationToken)
+    {
+        var payload = ParsePayload(job);
+        var field = payload["field"]?.GetValue<string>();
+        var startYear = payload["startYear"]?.GetValue<int>() ?? DateTime.UtcNow.Year - 9;
+        var endYear = payload["endYear"]?.GetValue<int>() ?? DateTime.UtcNow.Year;
+
+        var request = new Application.Trends.TrendsRequest(field, startYear, endYear);
+        var result = await dbContext.TrendResults.FirstOrDefaultAsync(t =>
+            t.Field == (field ?? "") &&
+            t.StartYear == startYear &&
+            t.EndYear == endYear,
+            cancellationToken);
+
+        var response = await new TrendAnalysisService(
+            dbContext,
+            jobService,
+            openRouterChatClient,
+            _trendAnalysisLogger).GetTrendsAsync(request, cancellationToken);
+
+        if (result is null)
+        {
+            result = new TrendResult
+            {
+                Field = field ?? "",
+                StartYear = startYear,
+                EndYear = endYear
+            };
+            dbContext.TrendResults.Add(result);
+        }
+
+        result.ResultJson = JsonSerializer.SerializeToNode(response)?.ToJsonString();
+        result.CalculatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        job.ResultJson = result.ResultJson;
+    }
+
+    private async Task RunResearchGoalAsync(Job job, CancellationToken cancellationToken)
+    {
+        var payload = ParsePayload(job);
+        var goal = payload["goal"]?.GetValue<string>() ?? string.Empty;
+        var maxPapers = payload["maxPapers"]?.GetValue<int>() ?? 20;
+        var field = payload["field"]?.GetValue<string>();
+
+        job.Status = JobStatus.Running;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var childJobs = await dbContext.Jobs
+            .Where(j => j.ParentJobId == job.Id)
+            .OrderBy(j => j.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        foreach (var childJob in childJobs)
+        {
+            childJob.Status = JobStatus.Running;
+        }
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        foreach (var childJob in childJobs)
+        {
+            using (_logger.BeginScope(new KeyValuePair<string, object?>[]
+            {
+                new("JobId", childJob.Id),
+                new("JobType", childJob.Type)
+            }))
+            {
+                try
+                {
+                    await RunAsync(childJob, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    childJob.Status = JobStatus.Failed;
+                    childJob.ErrorMessage = ex.Message;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    throw;
+                }
+            }
+        }
+
+        job.Status = JobStatus.Completed;
+        job.ResultJson = new JsonObject
+        {
+            ["goal"] = goal,
+            ["childJobs"] = new JsonArray(childJobs.Select(c => new JsonObject
+            {
+                ["id"] = c.Id,
+                ["type"] = c.Type.ToString(),
+                ["status"] = c.Status.ToString(),
+                ["result"] = c.ResultJson is null ? null : JsonNode.Parse(c.ResultJson)
+            }).ToArray())
+        }?.ToJsonString();
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task RunSearchPapersAsync(Job job, CancellationToken cancellationToken)
+    {
+        var payload = ParsePayload(job);
+        var goal = payload["goal"]?.GetValue<string>() ?? string.Empty;
+        var maxPapers = payload["maxPapers"]?.GetValue<int>() ?? 20;
+        var field = payload["field"]?.GetValue<string>();
+
+        var queries = new List<string> { goal };
+        if (!string.IsNullOrWhiteSpace(field))
+        {
+            queries.Add(field);
+        }
+
+        var searchResults = await semanticScholarClient.SearchPapersAsync(queries, maxPapers, cancellationToken);
+
+        job.ResultJson = new JsonObject
+        {
+            ["searchResults"] = new JsonArray(searchResults.Select(r => new JsonObject
+            {
+                ["semanticScholarId"] = r.SemanticScholarId,
+                ["title"] = r.Title,
+                ["authors"] = new JsonArray(r.Authors.Select(a => JsonValue.Create(a)).ToArray()),
+                ["year"] = r.Year,
+                ["venue"] = r.Venue
+            }).ToArray()),
+            ["count"] = searchResults.Count
+        }?.ToJsonString();
+    }
+
+    private async Task RunImportPaperAsync(Job job, CancellationToken cancellationToken)
+    {
+        var payload = ParsePayload(job);
+        var searchJobId = payload["searchJobId"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(searchJobId) || !Guid.TryParse(searchJobId, out var searchId))
+        {
+            throw new InvalidOperationException("searchJobId is required.");
+        }
+
+        var searchJob = await dbContext.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == searchId, cancellationToken);
+        if (searchJob == null)
+        {
+            throw new InvalidOperationException($"Search job {searchId} not found.");
+        }
+
+        var searchResultNode = JsonNode.Parse(searchJob.ResultJson ?? "{}")?.AsObject();
+        var searchResults = searchResultNode?["searchResults"]?.AsArray()
+            .Select(x => new SemanticScholarPaperImportModel(
+                x?["semanticScholarId"]?.GetValue<string>() ?? Guid.NewGuid().ToString("N"),
+                x?["doi"]?.GetValue<string>(),
+                x?["title"]?.GetValue<string>() ?? "Untitled",
+                x?["abstract"]?.GetValue<string>(),
+                x?["authors"]?.AsArray().Select(a => a?.GetValue<string>() ?? string.Empty).ToList() ?? [],
+                x?["year"]?.GetValue<int>(),
+                x?["venue"]?.GetValue<string>(),
+                x?["citationCount"]?.GetValue<int>() ?? 0,
+                null))
+            .ToList() ?? [];
+
+        var importResult = await paperService.ImportAsync(
+            new ImportPapersCommand(searchResults.Select(r => r.Title).ToList(), searchResults.Count, true),
+            cancellationToken);
+
+        job.ResultJson = new JsonObject
+        {
+            ["importedCount"] = importResult.ImportedCount,
+            ["paperIds"] = new JsonArray(importResult.Papers.Select(p => JsonValue.Create(p.Id)).ToArray())
+        }?.ToJsonString();
+    }
+
+    private async Task RunSummarizePaperChildAsync(Job job, CancellationToken cancellationToken)
+    {
+        var payload = ParsePayload(job);
+        var importJobId = payload["importJobId"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(importJobId) || !Guid.TryParse(importJobId, out var importId))
+        {
+            throw new InvalidOperationException("importJobId is required.");
+        }
+
+        var importJob = await dbContext.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == importId, cancellationToken);
+        if (importJob == null)
+        {
+            throw new InvalidOperationException($"Import job {importId} not found.");
+        }
+
+        var importResultNode = JsonNode.Parse(importJob.ResultJson ?? "{}")?.AsObject();
+        var paperIds = importResultNode?["paperIds"]?.AsArray()
+            .Select(x => x?.GetValue<Guid>())
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .ToList() ?? [];
+
+        var summaryResults = new List<JsonNode>();
+        foreach (var paperId in paperIds)
+        {
+            try
+            {
+                var paper = await paperService.GetByIdAsync(paperId, cancellationToken);
+                var summary = await summarizationService.GenerateSummaryAsync(paper, _options.Model, "v1", cancellationToken);
+
+                await summaryService.CreateAsync(
+                    new CreateSummaryCommand(paperId, _options.Model, "v1", SummaryStatus.Generated, summary, null),
+                    cancellationToken);
+
+                summaryResults.Add(new JsonObject
+                {
+                    ["paperId"] = paperId,
+                    ["status"] = "success"
+                });
+            }
+            catch (Exception ex)
+            {
+                summaryResults.Add(new JsonObject
+                {
+                    ["paperId"] = paperId,
+                    ["status"] = "failed",
+                    ["error"] = ex.Message
+                });
+            }
+        }
+
+        job.ResultJson = new JsonObject
+        {
+            ["summaries"] = new JsonArray(summaryResults.ToArray())
+        }?.ToJsonString();
+    }
+
+    private async Task RunAnalyzePaperAsync(Job job, CancellationToken cancellationToken)
+    {
+        var payload = ParsePayload(job);
+        var summarizeJobId = payload["summarizeJobId"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(summarizeJobId) || !Guid.TryParse(summarizeJobId, out var summarizeId))
+        {
+            throw new InvalidOperationException("summarizeJobId is required.");
+        }
+
+        var summarizeJob = await dbContext.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == summarizeId, cancellationToken);
+        if (summarizeJob == null)
+        {
+            throw new InvalidOperationException($"Summarize job {summarizeId} not found.");
+        }
+
+        var papers = await dbContext.Papers
+            .AsNoTracking()
+            .Include(p => p.Summaries)
+            .OrderByDescending(p => p.UpdatedAt)
+            .Take(12)
+            .ToListAsync(cancellationToken);
+
+        var systemPrompt = """
+You are an expert scientific research analyst.
+Return valid JSON only.
+Produce a concise, evidence-grounded cross-paper synthesis.
+Schema:
+overview: string
+emergingThemes: string[]
+crossIndustrySignals: string[]
+hypotheses: array of objects with hypothesis, rationale, supportingEvidence
+suggestedExperiments: array of objects with experiment, objective, expectedSignal
+risksAndUnknowns: string[]
+confidence: number
+""";
+
+        var userPrompt = BuildInsightsPrompt(string.Empty, papers);
+        var result = await openRouterChatClient.CreateJsonCompletionAsync(systemPrompt, userPrompt, cancellationToken);
+
+        job.ResultJson = result?.ToJsonString();
+    }
+
+    private async Task RunGenerateReportAsync(Job job, CancellationToken cancellationToken)
+    {
+        var payload = ParsePayload(job);
+        var goal = payload["goal"]?.GetValue<string>() ?? string.Empty;
+        var analyzeJobId = payload["analyzeJobId"]?.GetValue<string>();
+
+        JsonNode? analysisResult = null;
+        if (!string.IsNullOrWhiteSpace(analyzeJobId) && Guid.TryParse(analyzeJobId, out var analyzeId))
+        {
+            var analyzeJob = await dbContext.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == analyzeId, cancellationToken);
+            analysisResult = JsonNode.Parse(analyzeJob?.ResultJson ?? "{}");
+        }
+
+        var systemPrompt = """
+You are an expert scientific research report writer.
+Return valid JSON only.
+Generate a comprehensive research report based on the analysis.
+Schema:
+title: string
+executiveSummary: string
+introduction: string
+methodology: string
+findings: object with keyFindings, themes, signals
+discussion: string
+limitations: string[]
+futureResearch: string[]
+conclusions: string
+references: array of objects with title, authors, year, venue
+""";
+
+        var userPrompt = $"Research Goal: {goal}\n\nAnalysis Results:\n{analysisResult?.ToJsonString() ?? "{}"}";
+        var report = await openRouterChatClient.CreateJsonCompletionAsync(systemPrompt, userPrompt, cancellationToken);
+
+        job.ResultJson = report?.ToJsonString();
+    }
+
+    private async Task RunDuplicateDetectionAsync(Job job, CancellationToken cancellationToken)
+    {
+        var payload = ParsePayload(job);
+        var threshold = payload["threshold"]?.GetValue<double>() ?? 0.95;
+
+        job.Status = JobStatus.Running;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        await duplicateDetectionService.ComputeDuplicatePairsAsync(threshold, cancellationToken);
+
+        job.Status = JobStatus.Completed;
+        job.ResultJson = JsonSerializer.SerializeToNode(new { threshold, completedAt = DateTimeOffset.UtcNow })?.ToJsonString();
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task RunWatchlistPollingAsync(Job job, CancellationToken cancellationToken)
+    {
+        var payload = ParsePayload(job);
+        var savedSearchId = payload["savedSearchId"]?.GetValue<Guid>();
+
+        if (savedSearchId == null)
+        {
+            throw new InvalidOperationException("savedSearchId is required for WatchlistPolling job.");
+        }
+
+        var savedSearch = await dbContext.SavedSearches.FirstOrDefaultAsync(s => s.Id == savedSearchId, cancellationToken);
+        if (savedSearch == null)
+        {
+            throw new InvalidOperationException($"Saved search {savedSearchId} not found.");
+        }
+
+        var queries = new List<string> { savedSearch.Query };
+        if (!string.IsNullOrWhiteSpace(savedSearch.Field))
+        {
+            queries = new List<string> { $"{savedSearch.Query} {savedSearch.Field}" };
+        }
+
+        var searchResults = await semanticScholarClient.SearchPapersAsync(queries, 10, cancellationToken);
+
+        var semanticIds = searchResults.Select(c => c.SemanticScholarId).Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+        var dois = searchResults.Select(c => c.Doi).Where(d => !string.IsNullOrWhiteSpace(d)).ToList();
+
+        var existingPapers = await dbContext.Papers
+            .Where(p => (p.SemanticScholarId != null && semanticIds.Contains(p.SemanticScholarId))
+                     || (p.Doi != null && dois.Contains(p.Doi)))
+            .ToListAsync(cancellationToken);
+
+        var existingSemanticIds = existingPapers.Where(p => p.SemanticScholarId != null).Select(p => p.SemanticScholarId!).ToHashSet();
+        var existingDois = existingPapers.Where(p => p.Doi != null).Select(p => p.Doi!).ToHashSet();
+
+        var newPapers = searchResults
+            .Where(r => !string.IsNullOrWhiteSpace(r.SemanticScholarId) && !existingSemanticIds.Contains(r.SemanticScholarId!) ||
+                        !string.IsNullOrWhiteSpace(r.Doi) && !existingDois.Contains(r.Doi!))
+            .ToList();
+
+        var newCount = newPapers.Count;
+
+        if (newCount > 0)
+        {
+            foreach (var candidate in newPapers)
+            {
+                var paper = new Paper
+                {
+                    SemanticScholarId = candidate.SemanticScholarId,
+                    Doi = candidate.Doi,
+                    Title = candidate.Title,
+                    Abstract = candidate.Abstract,
+                    Authors = candidate.Authors.Where(a => !string.IsNullOrWhiteSpace(a)).ToList(),
+                    Year = candidate.Year,
+                    Venue = candidate.Venue,
+                    CitationCount = candidate.CitationCount,
+                    Source = PaperSource.SemanticScholar,
+                    Status = PaperStatus.Imported,
+                    MetadataJson = JsonSerializer.SerializeToNode(candidate.Metadata)?.ToJsonString()
+                };
+                dbContext.Papers.Add(paper);
+            }
+
+            var notification = new Notification
+            {
+                UserId = savedSearch.UserId,
+                Title = "New papers found",
+                Message = $"Found {newCount} new paper(s) matching your saved search: \"{savedSearch.Query}\"",
+                LinkUrl = $"/papers?search={Uri.EscapeDataString(savedSearch.Query)}"
+            };
+            dbContext.Notifications.Add(notification);
+        }
+
+        savedSearch.LastRunAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        job.ResultJson = JsonSerializer.SerializeToNode(new
+        {
+            savedSearchId = savedSearch.Id,
+            newPapersCount = newCount,
+            totalResultsFound = searchResults.Count,
+            ranAt = DateTimeOffset.UtcNow
+        })?.ToJsonString();
     }
 
     private static JsonObject ParsePayload(Job job) =>

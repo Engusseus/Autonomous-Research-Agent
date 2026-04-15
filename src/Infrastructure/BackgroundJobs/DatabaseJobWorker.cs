@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using AutonomousResearchAgent.Application.Jobs;
 using AutonomousResearchAgent.Domain.Entities;
 using AutonomousResearchAgent.Domain.Enums;
@@ -16,6 +19,7 @@ public sealed class DatabaseJobWorker(
     ILogger<DatabaseJobWorker> logger) : BackgroundService
 {
     private readonly BackgroundJobOptions _options = options.Value;
+    private static readonly ActivitySource ActivitySource = new("DatabaseJobWorker");
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -30,9 +34,14 @@ public sealed class DatabaseJobWorker(
                 var job = await ClaimNextQueuedJobAsync(dbContext, stoppingToken);
                 if (job is null)
                 {
+                    await ProcessDueSavedSearchesAsync(dbContext, stoppingToken);
                     await Task.Delay(TimeSpan.FromSeconds(_options.PollIntervalSeconds), stoppingToken);
                     continue;
                 }
+
+                using var activity = ActivitySource.StartActivity("ProcessJob", ActivityKind.Internal);
+                activity?.SetTag("job.id", job.Id.ToString());
+                activity?.SetTag("job.type", job.Type.ToString());
 
                 try
                 {
@@ -44,6 +53,7 @@ public sealed class DatabaseJobWorker(
                 }
                 catch (Exception ex)
                 {
+                    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                     logger.LogError(ex, "Background job {JobId} failed", job.Id);
                     job.Status = JobStatus.Failed;
                     job.ErrorMessage = ex.Message;
@@ -108,5 +118,59 @@ WHERE ""Id"" = (
         fallbackJob.ErrorMessage = null;
         await dbContext.SaveChangesAsync(cancellationToken);
         return fallbackJob;
+    }
+
+    private async Task ProcessDueSavedSearchesAsync(ApplicationDbContext dbContext, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        var dueSearches = await dbContext.SavedSearches
+            .Where(s => s.IsActive && s.Schedule != ScheduleType.Manual)
+            .ToListAsync(cancellationToken);
+
+        foreach (var search in dueSearches)
+        {
+            if (IsDueForPolling(search, now))
+            {
+                var existingJob = await dbContext.Jobs
+                    .AnyAsync(j => j.TargetEntityId == search.Id &&
+                                   j.Type == JobType.WatchlistPolling &&
+                                   j.Status == JobStatus.Queued, cancellationToken);
+
+                if (!existingJob)
+                {
+                    var job = new Job
+                    {
+                        Type = JobType.WatchlistPolling,
+                        Status = JobStatus.Queued,
+                        TargetEntityId = search.Id,
+                        PayloadJson = JsonNode.Parse(JsonSerializer.Serialize(new { savedSearchId = search.Id }))?.ToJsonString() ?? "{}",
+                        CreatedBy = "system-watchlist"
+                    };
+                    dbContext.Jobs.Add(job);
+                    logger.LogInformation("Created WatchlistPolling job for saved search {SavedSearchId}", search.Id);
+                }
+            }
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static bool IsDueForPolling(SavedSearch search, DateTimeOffset now)
+    {
+        if (!search.LastRunAt.HasValue)
+        {
+            return true;
+        }
+
+        var lastRun = search.LastRunAt.Value;
+
+        return search.Schedule switch
+        {
+            ScheduleType.Hourly => now - lastRun >= TimeSpan.FromHours(1),
+            ScheduleType.Daily => now - lastRun >= TimeSpan.FromDays(1),
+            ScheduleType.Weekly => now - lastRun >= TimeSpan.FromDays(7),
+            _ => false
+        };
     }
 }

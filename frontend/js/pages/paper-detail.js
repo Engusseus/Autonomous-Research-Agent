@@ -1,11 +1,15 @@
 import {
   getPaper, updatePaper, getPaperSummaries, getPaperDocuments,
-  approveSummary, rejectSummary, createSummarizeJob, queueDocumentProcessing
+  approveSummary, rejectSummary, createSummarizeJob, queueDocumentProcessing,
+  createPaperDocument, getPaperAnnotations, createAnnotation,
+  updateAnnotation, deleteAnnotation
 } from '../api.js';
 import {
   h, clear, loading, badge, formatAuthors, formatDate, formatDateTime,
   jsonBlock, toast, emptyState
 } from '../components.js';
+import { renderAnnotationSidebar, createHighlightButton } from '../components/annotations.js';
+import { renderCitationGraph } from '../components/CitationGraph.js';
 
 export async function render(container, { navigate, params }) {
   const paperId = params.id;
@@ -13,10 +17,11 @@ export async function render(container, { navigate, params }) {
   container.appendChild(loading('Loading paper'));
 
   try {
-    const [paper, summaries, documents] = await Promise.all([
+    const [paper, summaries, documents, annotations] = await Promise.all([
       getPaper(paperId),
       getPaperSummaries(paperId).catch(() => []),
       getPaperDocuments(paperId).catch(() => []),
+      getPaperAnnotations(paperId).catch(() => []),
     ]);
 
     clear(container);
@@ -60,9 +65,43 @@ export async function render(container, { navigate, params }) {
     }
     container.appendChild(meta);
 
+    // Tabs
+    const tabs = h('div', { className: 'tabs' });
+    const tabNames = ['Overview', 'Documents', 'Citation Graph', 'Annotations'];
+    let activeTab = 'Overview';
+
+    const tabBtns = tabNames.map(name => {
+      const tab = h('button', {
+        className: `tab ${activeTab === name ? 'active' : ''}`,
+        onClick: () => {
+          activeTab = name;
+          tabBtns.forEach((t, i) => t.classList.toggle('active', tabNames[i] === name));
+          overviewContent.style.display = name === 'Overview' ? '' : 'none';
+          docsContent.style.display = name === 'Documents' ? '' : 'none';
+          graphContent.style.display = name === 'Citation Graph' ? '' : 'none';
+          annotationContent.style.display = name === 'Annotations' ? '' : 'none';
+        },
+      }, name);
+      if (name === 'Documents') {
+        tab.appendChild(h('span', { className: 'tab-count' }, documents.length));
+      }
+      if (name === 'Annotations') {
+        tab.appendChild(h('span', { className: 'tab-count' }, annotations.length));
+      }
+      return tab;
+    });
+    tabs.appendChild(...tabBtns);
+    container.appendChild(tabs);
+
+    // Overview content
+    const overviewContent = h('div', { id: 'tab-overview' });
+    const docsContent = h('div', { id: 'tab-documents', style: 'display:none' });
+    const graphContent = h('div', { id: 'tab-graph', style: 'display:none' });
+    const annotationContent = h('div', { id: 'tab-annotations', style: 'display:none' });
+
     // Abstract
     if (paper.abstract) {
-      container.appendChild(
+      overviewContent.appendChild(
         h('div', { className: 'section' },
           h('div', { className: 'section-header' },
             h('h2', { className: 'section-title' }, 'Abstract'),
@@ -82,7 +121,7 @@ export async function render(container, { navigate, params }) {
           summarizeBtn.textContent = 'CREATING JOB\u2026';
           await createSummarizeJob({ paperId });
           toast('Summarize job created', 'success');
-          navigate(`/papers/${paperId}`); // Refresh
+          navigate(`/papers/${paperId}`);
         } catch (err) {
           toast(err.message, 'error');
           summarizeBtn.disabled = false;
@@ -110,7 +149,7 @@ export async function render(container, { navigate, params }) {
         }, `SET ${s.toUpperCase()}`)
       );
     }
-    container.appendChild(actions);
+    overviewContent.appendChild(actions);
 
     // Summaries section
     const summariesSection = h('div', { className: 'section' });
@@ -127,69 +166,11 @@ export async function render(container, { navigate, params }) {
         summariesSection.appendChild(renderSummaryCard(summary, paperId, navigate));
       }
     }
-    container.appendChild(summariesSection);
-
-    // Documents section
-    const docsSection = h('div', { className: 'section' });
-    docsSection.appendChild(
-      h('div', { className: 'section-header' },
-        h('h2', { className: 'section-title' }, `Documents (${documents.length})`),
-      )
-    );
-
-    if (documents.length === 0) {
-      docsSection.appendChild(emptyState('No documents', 'Documents can be attached to this paper'));
-    } else {
-      const docTable = h('table', { className: 'table' });
-      docTable.appendChild(
-        h('thead', {},
-          h('tr', {},
-            h('th', {}, 'File'),
-            h('th', {}, 'Type'),
-            h('th', {}, 'Status'),
-            h('th', {}, 'Updated'),
-            h('th', {}, ''),
-          )
-        )
-      );
-      const tbody = h('tbody');
-      for (const doc of documents) {
-        tbody.appendChild(
-          h('tr', {},
-            h('td', {},
-              h('div', { className: 'cell-title' }, doc.fileName || 'Document'),
-              h('div', { className: 'cell-meta cell-mono truncate', style: 'max-width:300px' }, doc.sourceUrl),
-            ),
-            h('td', {}, doc.mediaType || '\u2014'),
-            h('td', {}, badge(doc.status)),
-            h('td', { className: 'text-secondary' }, formatDateTime(doc.updatedAt)),
-            h('td', {},
-              doc.status !== 'Extracted'
-                ? h('button', {
-                    className: 'btn btn-secondary btn-sm',
-                    onClick: async () => {
-                      try {
-                        await queueDocumentProcessing(paperId, doc.id, { force: false });
-                        toast('Processing queued', 'success');
-                        navigate(`/papers/${paperId}`);
-                      } catch (err) {
-                        toast(err.message, 'error');
-                      }
-                    },
-                  }, 'PROCESS')
-                : null,
-            ),
-          )
-        );
-      }
-      docTable.appendChild(tbody);
-      docsSection.appendChild(h('div', { className: 'table-wrap' }, docTable));
-    }
-    container.appendChild(docsSection);
+    overviewContent.appendChild(summariesSection);
 
     // Metadata
     if (paper.metadata) {
-      container.appendChild(
+      overviewContent.appendChild(
         h('div', { className: 'section' },
           h('div', { className: 'section-header' },
             h('h2', { className: 'section-title' }, 'Metadata'),
@@ -198,6 +179,109 @@ export async function render(container, { navigate, params }) {
         )
       );
     }
+
+    // Documents tab content
+    const addDocForm = h('div', { className: 'section' });
+    addDocForm.appendChild(
+      h('div', { className: 'section-header' },
+        h('h2', { className: 'section-title' }, 'Add Document'),
+      )
+    );
+
+    const urlField = h('div', { className: 'field-group' },
+      h('label', { className: 'field-label' }, 'Source URL'),
+      h('input', { type: 'url', className: 'input', id: 'doc-url-input', placeholder: 'https://example.com/paper.pdf' })
+    );
+    addDocForm.appendChild(urlField);
+
+    const addDocActions = h('div', { className: 'page-actions' });
+    const addDocBtn = h('button', {
+      className: 'btn btn-primary btn-sm',
+      onClick: async () => {
+        const urlInput = document.getElementById('doc-url-input');
+        const sourceUrl = urlInput.value.trim();
+        if (!sourceUrl) {
+          toast('Please enter a source URL', 'error');
+          return;
+        }
+        try {
+          addDocBtn.disabled = true;
+          addDocBtn.textContent = 'ADDING\u2026';
+          await createPaperDocument(paperId, { sourceUrl });
+          toast('Document added', 'success');
+          navigate(`/papers/${paperId}`);
+        } catch (err) {
+          toast(err.message, 'error');
+          addDocBtn.disabled = false;
+          addDocBtn.textContent = 'ADD DOCUMENT';
+        }
+      },
+    }, 'ADD DOCUMENT');
+    addDocActions.appendChild(addDocBtn);
+    addDocForm.appendChild(addDocActions);
+
+    docsContent.appendChild(addDocForm);
+
+    // Documents list
+    const docsSection = h('div', { className: 'section' });
+    docsSection.appendChild(
+      h('div', { className: 'section-header' },
+        h('h2', { className: 'section-title' }, `Documents (${documents.length})`),
+      )
+    );
+
+    if (documents.length === 0) {
+      docsSection.appendChild(emptyState('No documents', 'Add a document URL above'));
+    } else {
+      for (const doc of documents) {
+        docsSection.appendChild(renderDocumentCard(doc, paperId, navigate));
+      }
+    }
+    docsContent.appendChild(docsSection);
+
+    container.appendChild(overviewContent);
+    container.appendChild(docsContent);
+    container.appendChild(graphContent);
+    container.appendChild(annotationContent);
+
+    if (paper.semanticScholarId) {
+      renderCitationGraph(graphContent, { paperId, navigate });
+    } else {
+      graphContent.appendChild(emptyState('No Semantic Scholar ID', 'Import this paper from Semantic Scholar to view its citation graph'));
+    }
+
+    const handleCreateAnnotation = async (data) => {
+      try {
+        await createAnnotation(paperId, data);
+        toast('Annotation created', 'success');
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    };
+
+    const handleUpdateAnnotation = async (id, data) => {
+      try {
+        await updateAnnotation(id, data);
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    };
+
+    const handleDeleteAnnotation = async (id) => {
+      try {
+        await deleteAnnotation(id);
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    };
+
+    renderAnnotationSidebar(annotationContent, {
+      paperId,
+      annotations,
+      onCreate: handleCreateAnnotation,
+      onUpdate: handleUpdateAnnotation,
+      onDelete: handleDeleteAnnotation
+    });
 
   } catch (err) {
     clear(container);
@@ -268,6 +352,80 @@ function renderSummaryCard(summary, paperId, navigate) {
       }, 'REJECT')
     );
     card.appendChild(actions);
+  }
+
+  return card;
+}
+
+function renderDocumentCard(doc, paperId, navigate) {
+  const card = h('div', { className: 'summary-card' });
+
+  const header = h('div', { className: 'summary-card-header' },
+    h('div', { className: 'flex items-center gap-3' },
+      badge(doc.status),
+      h('span', { className: 'summary-card-meta' }, doc.mediaType || 'Document'),
+    ),
+    h('span', { className: 'summary-card-meta' }, formatDateTime(doc.updatedAt)),
+  );
+  card.appendChild(header);
+
+  if (doc.sourceUrl) {
+    card.appendChild(h('div', { className: 'cell-mono truncate', style: 'max-width:500px;font-size:11px;color:var(--c-text-secondary);margin-bottom:var(--s-3)' }, doc.sourceUrl));
+  }
+
+  if (doc.lastError) {
+    card.appendChild(h('div', { className: 'summary-card-meta', style: 'color:var(--c-red);margin-bottom:var(--s-3)' }, `Error: ${doc.lastError}`));
+  }
+
+  if (doc.extractedText) {
+    const toggleBtn = h('button', {
+      className: 'btn btn-secondary btn-sm',
+      onClick: () => {
+        const panel = document.getElementById(`doc-text-${doc.id}`);
+        if (panel.hidden) {
+          panel.hidden = false;
+          toggleBtn.textContent = 'HIDE TEXT';
+        } else {
+          panel.hidden = true;
+          toggleBtn.textContent = 'VIEW TEXT';
+        }
+      },
+    }, 'VIEW TEXT');
+    card.appendChild(h('div', { style: 'margin-bottom:var(--s-3)' }, toggleBtn));
+
+    const textPanel = h('div', {
+      id: `doc-text-${doc.id}`,
+      hidden: true,
+      className: 'summary-card-body',
+    },
+      h('pre', {
+        className: 'json-block',
+        style: 'max-height:400px;font-size:11px;white-space:pre-wrap'
+      }, doc.extractedText)
+    );
+    card.appendChild(textPanel);
+  } else if (doc.status === 'Extracted' || doc.status === 'Downloaded') {
+    card.appendChild(h('div', { className: 'summary-card-meta', style: 'margin-bottom:var(--s-3)' }, 'No extracted text available'));
+  }
+
+  if (doc.status !== 'Extracted' && doc.status !== 'Failed') {
+    const processBtn = h('button', {
+      className: 'btn btn-primary btn-sm',
+      onClick: async () => {
+        try {
+          processBtn.disabled = true;
+          processBtn.textContent = 'QUEUING\u2026';
+          await queueDocumentProcessing(paperId, doc.id, { force: false });
+          toast('Processing queued', 'success');
+          navigate(`/papers/${paperId}`);
+        } catch (err) {
+          toast(err.message, 'error');
+          processBtn.disabled = false;
+          processBtn.textContent = 'PROCESS';
+        }
+      },
+    }, 'PROCESS');
+    card.appendChild(h('div', { className: 'summary-card-actions' }, processBtn));
   }
 
   return card;

@@ -2,8 +2,29 @@ using System.Security.Claims;
 using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Api.Middleware;
 using AutonomousResearchAgent.Infrastructure.Extensions;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
+
+const long maxDocumentUploadSizeBytes = 100 * 1024 * 1024;
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = maxDocumentUploadSizeBytes;
+});
+
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService("AutonomousResearchAgent"))
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddAspNetCoreInstrumentation(options => options.RecordException = true)
+            .AddHttpClientInstrumentation()
+            .AddSource("AutonomousJobRunner")
+            .AddSource("DatabaseJobWorker");
+    });
 
 builder.Services.AddApiLayer(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -22,8 +43,12 @@ if (app.Environment.IsDevelopment())
     app.UseCors();
 }
 app.UseHttpsRedirection();
+app.UseDocumentUploadSizeLimit(maxDocumentUploadSizeBytes);
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseAuthentication();
+app.UseRateLimiter();
 if (app.Environment.IsDevelopment())
 {
     app.Use(async (context, next) =>

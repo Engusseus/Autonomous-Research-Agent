@@ -52,4 +52,14 @@ public sealed class PaperDocumentsController(IPaperDocumentService paperDocument
         var updated = await paperDocumentService.QueueProcessingAsync(paperId, documentId, request.ToApplicationModel(User.GetActorName()), cancellationToken);
         return Ok(updated.ToDto());
     }
+
+    [HttpDelete("{documentId:guid}")]
+    [Authorize(Policy = PolicyNames.EditAccess)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteDocument(Guid paperId, Guid documentId, CancellationToken cancellationToken)
+    {
+        await paperDocumentService.DeleteAsync(paperId, documentId, cancellationToken);
+        return NoContent();
+    }
 }

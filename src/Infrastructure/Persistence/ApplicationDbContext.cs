@@ -9,8 +9,24 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<PaperSummary> PaperSummaries => Set<PaperSummary>();
     public DbSet<PaperEmbedding> PaperEmbeddings => Set<PaperEmbedding>();
     public DbSet<PaperDocument> PaperDocuments => Set<PaperDocument>();
+    public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<AnalysisResult> AnalysisResults => Set<AnalysisResult>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<UserRole> UserRoles => Set<UserRole>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<PaperCitation> PaperCitations => Set<PaperCitation>();
+    public DbSet<PaperAnnotation> PaperAnnotations => Set<PaperAnnotation>();
+    public DbSet<Collection> Collections => Set<Collection>();
+    public DbSet<CollectionPaper> CollectionPapers => Set<CollectionPaper>();
+    public DbSet<TrendResult> TrendResults => Set<TrendResult>();
+    public DbSet<SavedSearch> SavedSearches => Set<SavedSearch>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<Hypothesis> Hypotheses => Set<Hypothesis>();
+    public DbSet<HypothesisPaper> HypothesisPapers => Set<HypothesisPaper>();
+    public DbSet<PotentialDuplicate> PotentialDuplicates => Set<PotentialDuplicate>();
+    public DbSet<LiteratureReview> LiteratureReviews => Set<LiteratureReview>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

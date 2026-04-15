@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════
 
 import { checkHealth, getConfig, saveConfig } from './api.js';
-import { clear, toast } from './components.js';
+import { clear, toast, notificationBell } from './components.js';
 
 // ── Route definitions ────────────────────────────
 
@@ -12,10 +12,19 @@ const routes = [
   { path: '/', module: () => import('./pages/dashboard.js'), title: 'Dashboard' },
   { path: '/papers', module: () => import('./pages/papers.js'), title: 'Papers' },
   { path: '/papers/:id', module: () => import('./pages/paper-detail.js'), title: 'Paper Detail' },
+  { path: '/summaries', module: () => import('./pages/summaries.js'), title: 'Summaries' },
+  { path: '/summaries/:id', module: () => import('./pages/summary-detail.js'), title: 'Summary Detail' },
   { path: '/jobs', module: () => import('./pages/jobs.js'), title: 'Jobs' },
   { path: '/jobs/:id', module: () => import('./pages/jobs.js'), title: 'Job Detail' },
   { path: '/search', module: () => import('./pages/search.js'), title: 'Search' },
+  { path: '/chat', module: () => import('./pages/chat.js'), title: 'Chat' },
   { path: '/import', module: () => import('./pages/import.js'), title: 'Import' },
+  { path: '/analysis', module: () => import('./pages/analysis.js'), title: 'Analysis' },
+  { path: '/hypothesis-tracker', module: () => import('./pages/hypothesis-tracker.js'), title: 'Hypothesis Tracker' },
+  { path: '/collections', module: () => import('./pages/collections.js'), title: 'Collections' },
+  { path: '/trends', module: () => import('./pages/trends.js'), title: 'Trends' },
+  { path: '/literature-review', module: () => import('./pages/literature-review.js'), title: 'Literature Review' },
+  { path: '/watchlist', module: () => import('./pages/watchlist.js'), title: 'Watchlist' },
 ];
 
 // ── Router ───────────────────────────────────────
@@ -197,6 +206,14 @@ function initMobileMenu() {
 function init() {
   initSettings();
   initMobileMenu();
+
+  // Initialize notification bell
+  const bellContainer = document.getElementById('notification-bell-container');
+  if (bellContainer) {
+    notificationBell({
+      onNavigate: () => handleRoute()
+    });
+  }
 
   // Listen for route changes
   window.addEventListener('hashchange', handleRoute);

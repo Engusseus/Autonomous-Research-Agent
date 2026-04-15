@@ -54,7 +54,8 @@ public sealed class JobService(
             Status = JobStatus.Queued,
             PayloadJson = JsonNodeMapper.Serialize(command.Payload) ?? "{}",
             TargetEntityId = command.TargetEntityId,
-            CreatedBy = command.CreatedBy
+            CreatedBy = command.CreatedBy,
+            ParentJobId = command.ParentJobId
         };
 
         dbContext.Jobs.Add(entity);
@@ -83,5 +84,15 @@ public sealed class JobService(
         logger.LogInformation("Retried job {JobId}", entity.Id);
 
         return entity.ToModel();
+    }
+
+    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var entity = await dbContext.Jobs.FirstOrDefaultAsync(j => j.Id == id, cancellationToken)
+            ?? throw new NotFoundException(nameof(Job), id);
+
+        dbContext.Jobs.Remove(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Deleted job {JobId}", id);
     }
 }

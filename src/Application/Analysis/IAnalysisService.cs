@@ -6,5 +6,7 @@ public interface IAnalysisService
     Task<AnalysisResultModel> CompareFieldsAsync(CompareFieldsCommand command, CancellationToken cancellationToken);
     Task<AnalysisJobStatusModel> GenerateInsightsAsync(GenerateInsightsCommand command, CancellationToken cancellationToken);
     Task<AnalysisJobStatusModel> GetByJobIdAsync(Guid jobId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<AnalysisResultModel>> GetAllAsync(CancellationToken cancellationToken);
+    Task DeleteAsync(Guid analysisResultId, CancellationToken cancellationToken);
 }
 

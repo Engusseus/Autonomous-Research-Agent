@@ -2,15 +2,19 @@ using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Common;
 using AutonomousResearchAgent.Api.Contracts.Papers;
 using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Application.Citations;
 using AutonomousResearchAgent.Application.Papers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AutonomousResearchAgent.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/papers")]
-public sealed class PapersController(IPaperService paperService) : ControllerBase
+public sealed class PapersController(
+    IPaperService paperService,
+    ICitationGraphService citationGraphService) : ControllerBase
 {
     /// <summary>
     /// Lists papers using pagination, filtering, and sorting.
@@ -70,12 +74,53 @@ public sealed class PapersController(IPaperService paperService) : ControllerBas
     /// </summary>
     [HttpPost("import")]
     [Authorize(Policy = PolicyNames.EditAccess)]
+    [EnableRateLimiting(RateLimiterPolicyNames.Expensive)]
     [ProducesResponseType(typeof(ImportPapersResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<ImportPapersResponse>> ImportPapers([FromBody] ImportPapersRequest request, CancellationToken cancellationToken)
     {
         var result = await paperService.ImportAsync(request.ToApplicationModel(), cancellationToken);
         return Ok(result.ToDto());
+    }
+
+    /// <summary>
+    /// Deletes a paper by its internal identifier.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [Authorize(Policy = PolicyNames.EditAccess)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeletePaper(Guid id, CancellationToken cancellationToken)
+    {
+        await paperService.DeleteAsync(id, cancellationToken);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Gets the citation graph for a paper.
+    /// </summary>
+    [HttpGet("{id:guid}/graph")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(typeof(CitationGraphResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CitationGraphResponse>> GetCitationGraph(Guid id, [FromQuery] int depth = 2, CancellationToken cancellationToken = default)
+    {
+        var graph = await citationGraphService.GetCitationGraphAsync(id, depth, cancellationToken);
+        return Ok(graph.ToDto());
+    }
+
+    /// <summary>
+    /// Ingests citations for a paper from Semantic Scholar.
+    /// </summary>
+    [HttpPost("{id:guid}/ingest-citations")]
+    [Authorize(Policy = PolicyNames.EditAccess)]
+    [EnableRateLimiting(RateLimiterPolicyNames.Expensive)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> IngestCitations(Guid id, CancellationToken cancellationToken)
+    {
+        await citationGraphService.IngestCitationsAsync(id, cancellationToken);
+        return NoContent();
     }
 }
 

@@ -121,4 +121,14 @@ public sealed class SummaryService(
 
         return entity.ToModel();
     }
+
+    public async Task DeleteAsync(Guid summaryId, CancellationToken cancellationToken)
+    {
+        var entity = await dbContext.PaperSummaries.FirstOrDefaultAsync(s => s.Id == summaryId, cancellationToken)
+            ?? throw new NotFoundException(nameof(PaperSummary), summaryId);
+
+        dbContext.PaperSummaries.Remove(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Deleted summary {SummaryId}", summaryId);
+    }
 }

@@ -240,6 +240,199 @@ export function queueDocumentProcessing(paperId, documentId, data = {}) {
   return request('POST', `/api/v1/papers/${paperId}/documents/${documentId}/queue-processing`, data);
 }
 
+export function getCitationGraph(paperId, params = {}, signal) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== '') qs.set(k, v);
+  }
+  return request('GET', `/api/v1/papers/${paperId}/graph?${qs}`, null, { cache: true, signal });
+}
+
+export function ingestCitations(paperId) {
+  invalidatePrefix(`/api/v1/papers/${paperId}`);
+  return request('POST', `/api/v1/papers/${paperId}/ingest-citations`, null);
+}
+
+// ── Annotations ─────────────────────────────────
+
+export function getPaperAnnotations(paperId, userId = null, signal) {
+  const qs = new URLSearchParams();
+  if (userId != null) qs.set('userId', userId);
+  const query = qs.toString() ? `?${qs}` : '';
+  return request('GET', `/api/v1/papers/${paperId}/annotations${query}`, null, { cache: true, signal });
+}
+
+export function getAnnotation(annotationId, signal) {
+  return request('GET', `/api/v1/annotations/${annotationId}`, null, { cache: true, signal });
+}
+
+export function createAnnotation(paperId, data) {
+  invalidatePrefix(`/api/v1/papers/${paperId}/annotations`);
+  return request('POST', `/api/v1/papers/${paperId}/annotations`, data);
+}
+
+export function updateAnnotation(annotationId, data) {
+  invalidatePrefix('/api/v1/annotations');
+  return request('PUT', `/api/v1/annotations/${annotationId}`, data);
+}
+
+export function deleteAnnotation(annotationId) {
+  invalidatePrefix('/api/v1/annotations');
+  return request('DELETE', `/api/v1/annotations/${annotationId}`);
+}
+
+// ── Trends ───────────────────────────────────────
+
+export function getTrends(params = {}, signal) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== '') qs.set(k, v);
+  }
+  return request('GET', `/api/v1/trends?${qs}`, null, { cache: true, signal });
+}
+
+// ── Chat ─────────────────────────────────────────
+
+export async function streamChat(data, { signal } = {}) {
+  const { baseUrl, token } = getConfig();
+  const url = `${baseUrl}/api/v1/chat`;
+  const h = { 'Content-Type': 'application/json' };
+  if (token) h['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: h,
+    body: JSON.stringify(data),
+    signal,
+  });
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const err = await res.json();
+      detail = err.detail || err.title || err.message || JSON.stringify(err);
+    } catch {
+      detail = res.statusText;
+    }
+    throw new ApiError(res.status, detail);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+
+  return {
+    async *[Symbol.asyncIterator]() {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        yield decoder.decode(value, { stream: true });
+      }
+    }
+  };
+}
+
+export async function postChat(data, { signal } = {}) {
+  return request('POST', '/api/v1/chat/sources', data, { signal });
+}
+
+// ── Saved Searches / Watchlist ──────────────────
+
+export function getSavedSearches(params = {}, signal) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== '') qs.set(k, v);
+  }
+  return request('GET', `/api/v1/saved-searches?${qs}`, null, { cache: true, signal });
+}
+
+export function getSavedSearch(id, signal) {
+  return request('GET', `/api/v1/saved-searches/${id}`, null, { cache: true, signal });
+}
+
+export function createSavedSearch(data) {
+  invalidatePrefix('/api/v1/saved-searches');
+  return request('POST', '/api/v1/saved-searches', data);
+}
+
+export function updateSavedSearch(id, data) {
+  invalidatePrefix('/api/v1/saved-searches');
+  return request('PUT', `/api/v1/saved-searches/${id}`, data);
+}
+
+export function deleteSavedSearch(id) {
+  invalidatePrefix('/api/v1/saved-searches');
+  return request('DELETE', `/api/v1/saved-searches/${id}`);
+}
+
+export function runSavedSearch(id) {
+  invalidatePrefix('/api/v1/saved-searches');
+  return request('POST', `/api/v1/saved-searches/${id}/run`);
+}
+
+// ── Notifications ────────────────────────────────
+
+export function getNotifications(params = {}, signal) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== '') qs.set(k, v);
+  }
+  return request('GET', `/api/v1/notifications?${qs}`, null, { cache: true, signal });
+}
+
+export function getUnreadNotificationCount(signal) {
+  return request('GET', '/api/v1/notifications/unread-count', null, { cache: true, signal });
+}
+
+export function markNotificationAsRead(id) {
+  invalidatePrefix('/api/v1/notifications');
+  return request('PUT', `/api/v1/notifications/${id}/read`);
+}
+
+export function markAllNotificationsAsRead() {
+  invalidatePrefix('/api/v1/notifications');
+  return request('PUT', '/api/v1/notifications/read-all');
+}
+
+// ── Hypotheses ────────────────────────────────────
+
+export function getHypotheses(signal) {
+  return request('GET', '/api/v1/hypotheses', null, { cache: true, signal });
+}
+
+export function getHypothesis(id, signal) {
+  return request('GET', `/api/v1/hypotheses/${id}`, null, { cache: true, signal });
+}
+
+export function createHypothesis(data) {
+  invalidatePrefix('/api/v1/hypotheses');
+  return request('POST', '/api/v1/hypotheses', data);
+}
+
+export function updateHypothesis(id, data) {
+  invalidatePrefix('/api/v1/hypotheses');
+  return request('PUT', `/api/v1/hypotheses/${id}`, data);
+}
+
+export function updateHypothesisStatus(id, data) {
+  invalidatePrefix('/api/v1/hypotheses');
+  return request('PUT', `/api/v1/hypotheses/${id}/status`, data);
+}
+
+export function deleteHypothesis(id) {
+  invalidatePrefix('/api/v1/hypotheses');
+  return request('DELETE', `/api/v1/hypotheses/${id}`);
+}
+
+export function addHypothesisPaper(hypothesisId, data) {
+  invalidatePrefix('/api/v1/hypotheses');
+  return request('POST', `/api/v1/hypotheses/${hypothesisId}/papers`, data);
+}
+
+export function removeHypothesisPaper(hypothesisId, paperId) {
+  invalidatePrefix('/api/v1/hypotheses');
+  return request('DELETE', `/api/v1/hypotheses/${hypothesisId}/papers/${paperId}`);
+}
+
 // ── Config re-export ─────────────────────────────
 
 export { getConfig, saveConfig };

@@ -25,11 +25,17 @@ public sealed class PaperEmbeddingConfiguration : IEntityTypeConfiguration<Paper
 
         builder.HasIndex(x => x.PaperId);
         builder.HasIndex(x => x.SummaryId);
+        builder.HasIndex(x => x.DocumentChunkId);
         builder.HasIndex(x => x.EmbeddingType);
 
         builder.HasOne(x => x.Summary)
             .WithMany(x => x.Embeddings)
             .HasForeignKey(x => x.SummaryId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(x => x.DocumentChunk)
+            .WithMany(x => x.Embeddings)
+            .HasForeignKey(x => x.DocumentChunkId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

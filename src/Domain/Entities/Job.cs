@@ -11,5 +11,8 @@ public sealed class Job : AuditableEntity
     public string? ErrorMessage { get; set; }
     public Guid? TargetEntityId { get; set; }
     public string? CreatedBy { get; set; }
+    public Guid? ParentJobId { get; set; }
+    public Job? ParentJob { get; set; }
+    public ICollection<Job> ChildJobs { get; set; } = [];
 }
 

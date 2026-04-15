@@ -9,5 +9,6 @@ public interface IPaperService
     Task<PaperDetail> CreateAsync(CreatePaperCommand command, CancellationToken cancellationToken);
     Task<PaperDetail> UpdateAsync(Guid id, UpdatePaperCommand command, CancellationToken cancellationToken);
     Task<ImportPapersResult> ImportAsync(ImportPapersCommand command, CancellationToken cancellationToken);
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 }
 

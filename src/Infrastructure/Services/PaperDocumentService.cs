@@ -60,11 +60,15 @@ public sealed class PaperDocumentService(
             MediaType = string.IsNullOrWhiteSpace(command.MediaType) ? null : command.MediaType.Trim(),
             RequiresOcr = command.RequiresOcr,
             MetadataJson = JsonNodeMapper.Serialize(command.Metadata),
-            Status = PaperDocumentStatus.Pending
+            Status = PaperDocumentStatus.Queued
         };
 
         dbContext.PaperDocuments.Add(entity);
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        await jobService.CreateAsync(
+            new CreateJobCommand(JobType.ProcessPaperDocument, PaperDocumentJobPayload.Create(entity), entity.Id, null),
+            cancellationToken);
 
         logger.LogInformation("Created paper document {DocumentId} for paper {PaperId}", entity.Id, entity.PaperId);
         return entity.ToModel();
@@ -92,6 +96,17 @@ public sealed class PaperDocumentService(
         logger.LogInformation("Queued processing for paper document {DocumentId}", entity.Id);
 
         return entity.ToModel();
+    }
+
+    public async Task DeleteAsync(Guid paperId, Guid documentId, CancellationToken cancellationToken)
+    {
+        var entity = await dbContext.PaperDocuments
+            .FirstOrDefaultAsync(d => d.PaperId == paperId && d.Id == documentId, cancellationToken)
+            ?? throw new NotFoundException(nameof(PaperDocument), documentId);
+
+        dbContext.PaperDocuments.Remove(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Deleted paper document {DocumentId}", documentId);
     }
 
     private async Task EnsurePaperExistsAsync(Guid paperId, CancellationToken cancellationToken)

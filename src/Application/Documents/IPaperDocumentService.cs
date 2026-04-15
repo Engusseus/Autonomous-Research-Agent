@@ -6,4 +6,5 @@ public interface IPaperDocumentService
     Task<PaperDocumentModel> GetByIdAsync(Guid paperId, Guid documentId, CancellationToken cancellationToken);
     Task<PaperDocumentModel> CreateAsync(CreatePaperDocumentCommand command, CancellationToken cancellationToken);
     Task<PaperDocumentModel> QueueProcessingAsync(Guid paperId, Guid documentId, QueuePaperDocumentProcessingCommand command, CancellationToken cancellationToken);
+    Task DeleteAsync(Guid paperId, Guid documentId, CancellationToken cancellationToken);
 }

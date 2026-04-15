@@ -11,6 +11,8 @@ public interface IEmbeddingIndexingService
 {
     Task UpsertPaperAbstractAsync(Paper paper, CancellationToken cancellationToken);
     Task UpsertSummaryAsync(PaperSummary summary, CancellationToken cancellationToken);
+    Task UpsertDocumentChunkAsync(DocumentChunk chunk, CancellationToken cancellationToken);
+    Task UpsertDocumentChunksAsync(IEnumerable<DocumentChunk> chunks, CancellationToken cancellationToken);
 }
 
 public sealed class EmbeddingIndexingService(
@@ -22,7 +24,7 @@ public sealed class EmbeddingIndexingService(
     private readonly LocalEmbeddingOptions _options = options.Value;
 
     public Task UpsertPaperAbstractAsync(Paper paper, CancellationToken cancellationToken)
-        => UpsertAsync(paper, null, EmbeddingType.PaperAbstract, paper.Abstract, cancellationToken);
+        => UpsertPaperEmbeddingAsync(paper.Id, null, null, EmbeddingType.PaperAbstract, paper.Abstract, cancellationToken);
 
     public async Task UpsertSummaryAsync(PaperSummary summary, CancellationToken cancellationToken)
     {
@@ -32,23 +34,35 @@ public sealed class EmbeddingIndexingService(
             paper = await dbContext.Papers.FirstOrDefaultAsync(p => p.Id == summary.PaperId, cancellationToken);
         }
 
-        await UpsertAsync(paper, summary, EmbeddingType.Summary, summary.SearchText, cancellationToken);
+        await UpsertPaperEmbeddingAsync(paper?.Id, summary.Id, null, EmbeddingType.Summary, summary.SearchText, cancellationToken);
     }
 
-    private async Task UpsertAsync(
-        Paper? paper,
-        PaperSummary? summary,
+    public async Task UpsertDocumentChunkAsync(DocumentChunk chunk, CancellationToken cancellationToken)
+    {
+        await UpsertDocumentChunkEmbeddingAsync(chunk, cancellationToken);
+    }
+
+    public async Task UpsertDocumentChunksAsync(IEnumerable<DocumentChunk> chunks, CancellationToken cancellationToken)
+    {
+        foreach (var chunk in chunks)
+        {
+            await UpsertDocumentChunkEmbeddingAsync(chunk, cancellationToken);
+        }
+    }
+
+    private async Task UpsertPaperEmbeddingAsync(
+        Guid? paperId,
+        Guid? summaryId,
+        Guid? documentChunkId,
         EmbeddingType embeddingType,
         string? content,
         CancellationToken cancellationToken)
     {
-        var paperId = paper?.Id ?? summary?.PaperId;
-        var summaryId = summary?.Id;
-
         var existing = await dbContext.PaperEmbeddings
             .FirstOrDefaultAsync(e =>
                 e.PaperId == paperId &&
                 e.SummaryId == summaryId &&
+                e.DocumentChunkId == documentChunkId &&
                 e.EmbeddingType == embeddingType,
                 cancellationToken);
 
@@ -58,7 +72,7 @@ public sealed class EmbeddingIndexingService(
             {
                 dbContext.PaperEmbeddings.Remove(existing);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                logger.LogInformation("Removed embedding for {EmbeddingType} {TargetId}", embeddingType, paperId ?? summaryId);
+                logger.LogInformation("Removed embedding for {EmbeddingType} {TargetId}", embeddingType, paperId ?? summaryId ?? documentChunkId);
             }
 
             return;
@@ -72,22 +86,63 @@ public sealed class EmbeddingIndexingService(
             {
                 PaperId = paperId,
                 SummaryId = summaryId,
-                EmbeddingType = embeddingType,
-                Paper = paper,
-                Summary = summary
+                DocumentChunkId = documentChunkId,
+                EmbeddingType = embeddingType
             };
             dbContext.PaperEmbeddings.Add(existing);
         }
 
         existing.PaperId = paperId;
         existing.SummaryId = summaryId;
+        existing.DocumentChunkId = documentChunkId;
         existing.EmbeddingType = embeddingType;
-        existing.Paper = paper;
-        existing.Summary = summary;
         existing.ModelName = _options.ModelName;
         existing.Vector = vector;
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("Upserted embedding for {EmbeddingType} {TargetId}", embeddingType, paperId ?? summaryId);
+        logger.LogInformation("Upserted embedding for {EmbeddingType} {TargetId}", embeddingType, paperId ?? summaryId ?? documentChunkId);
+    }
+
+    private async Task UpsertDocumentChunkEmbeddingAsync(DocumentChunk chunk, CancellationToken cancellationToken)
+    {
+        var existing = await dbContext.PaperEmbeddings
+            .FirstOrDefaultAsync(e =>
+                e.DocumentChunkId == chunk.Id &&
+                e.EmbeddingType == EmbeddingType.DocumentChunk,
+                cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(chunk.Text))
+        {
+            if (existing is not null)
+            {
+                dbContext.PaperEmbeddings.Remove(existing);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                logger.LogInformation("Removed embedding for DocumentChunk {ChunkId}", chunk.Id);
+            }
+
+            return;
+        }
+
+        var vector = await embeddingClient.GenerateEmbeddingAsync(chunk.Text.Trim(), cancellationToken);
+
+        if (existing is null)
+        {
+            existing = new PaperEmbedding
+            {
+                PaperId = chunk.PaperDocument?.PaperId ?? chunk.PaperDocumentId,
+                DocumentChunkId = chunk.Id,
+                EmbeddingType = EmbeddingType.DocumentChunk
+            };
+            dbContext.PaperEmbeddings.Add(existing);
+        }
+
+        existing.PaperId = chunk.PaperDocument?.PaperId ?? chunk.PaperDocumentId;
+        existing.DocumentChunkId = chunk.Id;
+        existing.EmbeddingType = EmbeddingType.DocumentChunk;
+        existing.ModelName = _options.ModelName;
+        existing.Vector = vector;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Upserted embedding for DocumentChunk {ChunkId}", chunk.Id);
     }
 }

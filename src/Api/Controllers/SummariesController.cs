@@ -4,6 +4,7 @@ using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Application.Summaries;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AutonomousResearchAgent.Api.Controllers;
 
@@ -22,6 +23,7 @@ public sealed class SummariesController(ISummaryService summaryService) : Contro
 
     [HttpPost("papers/{id:guid}/summaries")]
     [Authorize(Policy = PolicyNames.EditAccess)]
+    [EnableRateLimiting(RateLimiterPolicyNames.Expensive)]
     [ProducesResponseType(typeof(SummaryDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<SummaryDto>> CreateSummary(Guid id, [FromBody] CreateSummaryRequest request, CancellationToken cancellationToken)
     {
@@ -63,6 +65,16 @@ public sealed class SummariesController(ISummaryService summaryService) : Contro
     {
         var reviewed = await summaryService.ReviewAsync(summaryId, request.ToRejectedReviewCommand(User.GetActorName()), cancellationToken);
         return Ok(reviewed.ToDto());
+    }
+
+    [HttpDelete("summaries/{summaryId:guid}")]
+    [Authorize(Policy = PolicyNames.EditAccess)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteSummary(Guid summaryId, CancellationToken cancellationToken)
+    {
+        await summaryService.DeleteAsync(summaryId, cancellationToken);
+        return NoContent();
     }
 }
 
