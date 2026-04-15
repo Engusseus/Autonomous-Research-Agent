@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 namespace AutonomousResearchAgent.Api.Startup;
 
 public sealed class PostgresPasswordValidator : IStartupFilter

@@ -2,6 +2,7 @@ using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Annotations;
 using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Application.Annotations;
+using System.Security.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -109,6 +110,8 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
         [FromBody] UpdateAnnotationRequest request,
         CancellationToken cancellationToken)
     {
+        var userId = User.GetUserId();
+        if (userId is null) return Unauthorized();
         var command = new UpdateAnnotationCommand(request.Note);
         var updated = await annotationService.UpdateAsync(id, command, cancellationToken);
         return Ok(new AnnotationResponse(
@@ -132,6 +135,8 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteAnnotation(Guid id, CancellationToken cancellationToken)
     {
+        var userId = User.GetUserId();
+        if (userId is null) return Unauthorized();
         await annotationService.DeleteAsync(id, cancellationToken);
         return NoContent();
     }
