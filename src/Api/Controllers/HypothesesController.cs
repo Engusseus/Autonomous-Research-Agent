@@ -69,7 +69,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
             return NotFound();
         if (existing.UserId != userId.Value)
             return Forbid();
-            return Forbid();
+        return Forbid();
         var command = new UpdateHypothesisCommand(request.Title, request.Description);
         var updated = await hypothesisService.UpdateAsync(id, command, cancellationToken);
         return Ok(updated);
