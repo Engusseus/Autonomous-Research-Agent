@@ -96,11 +96,13 @@ function renderScatterPlot(container, papers, navigate) {
       dot.setAttribute('r', 12);
 
       const rect = container.getBoundingClientRect();
-      tooltip.innerHTML = `
-        <div style="font-weight:600;margin-bottom:4px;max-width:250px">${escapeHtml(paper.title)}</div>
-        <div style="color:#666;font-size:12px">${escapeHtml(formatAuthors(paper.authors, 2))}</div>
-        ${paper.year ? `<div style="color:#666;font-size:12px">${paper.year}</div>` : ''}
-      `;
+      clear(tooltip);
+      tooltip.appendChild(h('div', { style: 'font-weight:600;margin-bottom:4px;max-width:250px' }, paper.title));
+      tooltip.appendChild(h('div', { style: 'color:#666;font-size:12px' }, formatAuthors(paper.authors, 2)));
+      if (paper.year) {
+        tooltip.appendChild(h('div', { style: 'color:#666;font-size:12px' }, paper.year));
+      }
+
       tooltip.style.display = 'block';
       tooltip.style.left = (e.clientX + 15) + 'px';
       tooltip.style.top = (e.clientY - 10) + 'px';
@@ -146,11 +148,4 @@ function renderScatterPlot(container, papers, navigate) {
     `${papers.length} papers clustered • Hover for details • Click to open paper`
   );
   container.appendChild(info);
-}
-
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
