@@ -110,6 +110,7 @@ async function handleRoute() {
   } catch (err) {
     if (err.name === 'AbortError') return;
     console.error('Route error:', err);
+    toast(`Route error: ${err.message}`, 'error');
     clear(content);
     content.innerHTML = `
       <div class="empty-state">
