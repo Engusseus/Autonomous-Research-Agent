@@ -14,6 +14,7 @@ using AutonomousResearchAgent.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
 
 namespace AutonomousResearchAgent.Infrastructure.BackgroundJobs;
 
@@ -920,17 +921,24 @@ Types must be exactly: Method, Dataset, Metric, or Model
     private static List<(double X, double Y)> ComputeUmapCoordinates(List<float[]> vectors)
     {
         var n = vectors.Count;
-        return ComputeTSneCoordinates(vectors, n, 100, 42);
+        return ComputeTSneCoordinates(vectors, n, 100);
     }
 
-    private static List<(double X, double Y)> ComputeTSneCoordinates(List<float[]> vectors, int n, int iterations, int seed)
+    private static double GetSecureDouble()
+    {
+        Span<byte> bytes = stackalloc byte[8];
+        RandomNumberGenerator.Fill(bytes);
+        ulong ul = BitConverter.ToUInt64(bytes);
+        return (ul >> 11) * (1.0 / (1ul << 53));
+    }
+
+    private static List<(double X, double Y)> ComputeTSneCoordinates(List<float[]> vectors, int n, int iterations)
     {
         var coords = new List<(double X, double Y)>();
-        var random = new Random(seed);
 
         for (int i = 0; i < n; i++)
         {
-            coords.Add((random.NextDouble() * 0.0001, random.NextDouble() * 0.0001));
+            coords.Add((GetSecureDouble() * 0.0001, GetSecureDouble() * 0.0001));
         }
 
         var perplexity = Math.Min(30, n - 1);
