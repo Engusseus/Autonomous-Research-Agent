@@ -120,20 +120,6 @@ public sealed class DuplicateDetectionService(
 
     public async Task MergeDuplicatePapersAsync(Guid keepPaperId, Guid mergeIntoPaperId, string? notes, int? reviewedByUserId, CancellationToken cancellationToken = default)
     {
-        var duplicate = await dbContext.PotentialDuplicates
-            .FirstOrDefaultAsync(d =>
-                (d.PaperAId == keepPaperId && d.PaperBId == mergeIntoPaperId) ||
-                (d.PaperAId == mergeIntoPaperId && d.PaperBId == keepPaperId),
-                cancellationToken);
-
-        if (duplicate != null)
-        {
-            duplicate.Status = DuplicateReviewStatus.Merged;
-            duplicate.ReviewedByUserId = reviewedByUserId;
-            duplicate.ReviewedAt = DateTimeOffset.UtcNow;
-            duplicate.Notes = notes;
-        }
-
         var papersToMerge = await dbContext.Papers
             .Where(p => p.Id == keepPaperId || p.Id == mergeIntoPaperId)
             .ToListAsync(cancellationToken);
@@ -146,6 +132,22 @@ public sealed class DuplicateDetectionService(
             throw new NotFoundException(nameof(Paper), keepPaperId);
         }
 
+        await TransferSummariesAsync(keepPaperId, mergeIntoPaperId, cancellationToken);
+        await TransferDocumentsAsync(keepPaperId, mergeIntoPaperId, cancellationToken);
+        await TransferEmbeddingsAsync(keepPaperId, mergeIntoPaperId, cancellationToken);
+        await TransferCitationsAsync(keepPaperId, mergeIntoPaperId, cancellationToken);
+
+        dbContext.Papers.Remove(mergePaper);
+
+        await UpdateOrCreateDuplicateRecordAsync(keepPaperId, mergeIntoPaperId, notes, reviewedByUserId, cancellationToken);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Merged paper {MergePaperId} into {KeepPaperId}", mergeIntoPaperId, keepPaperId);
+    }
+
+    private async Task TransferSummariesAsync(Guid keepPaperId, Guid mergeIntoPaperId, CancellationToken cancellationToken)
+    {
         var summariesToUpdate = await dbContext.PaperSummaries
             .Where(s => s.PaperId == mergeIntoPaperId)
             .ToListAsync(cancellationToken);
@@ -154,7 +156,10 @@ public sealed class DuplicateDetectionService(
         {
             summary.PaperId = keepPaperId;
         }
+    }
 
+    private async Task TransferDocumentsAsync(Guid keepPaperId, Guid mergeIntoPaperId, CancellationToken cancellationToken)
+    {
         var documentsToUpdate = await dbContext.PaperDocuments
             .Where(d => d.PaperId == mergeIntoPaperId)
             .ToListAsync(cancellationToken);
@@ -163,7 +168,10 @@ public sealed class DuplicateDetectionService(
         {
             document.PaperId = keepPaperId;
         }
+    }
 
+    private async Task TransferEmbeddingsAsync(Guid keepPaperId, Guid mergeIntoPaperId, CancellationToken cancellationToken)
+    {
         var embeddingsToUpdate = await dbContext.PaperEmbeddings
             .Where(e => e.PaperId == mergeIntoPaperId)
             .ToListAsync(cancellationToken);
@@ -172,7 +180,10 @@ public sealed class DuplicateDetectionService(
         {
             embedding.PaperId = keepPaperId;
         }
+    }
 
+    private async Task TransferCitationsAsync(Guid keepPaperId, Guid mergeIntoPaperId, CancellationToken cancellationToken)
+    {
         var citationsWhereFrom = await dbContext.PaperCitations
             .Where(c => c.SourcePaperId == mergeIntoPaperId)
             .ToListAsync(cancellationToken);
@@ -190,12 +201,22 @@ public sealed class DuplicateDetectionService(
         {
             citation.TargetPaperId = keepPaperId;
         }
+    }
 
-        dbContext.Papers.Remove(mergePaper);
+    private async Task UpdateOrCreateDuplicateRecordAsync(Guid keepPaperId, Guid mergeIntoPaperId, string? notes, int? reviewedByUserId, CancellationToken cancellationToken)
+    {
+        var duplicate = await dbContext.PotentialDuplicates
+            .FirstOrDefaultAsync(d =>
+                (d.PaperAId == keepPaperId && d.PaperBId == mergeIntoPaperId) ||
+                (d.PaperAId == mergeIntoPaperId && d.PaperBId == keepPaperId),
+                cancellationToken);
 
         if (duplicate != null)
         {
-            await dbContext.SaveChangesAsync(cancellationToken);
+            duplicate.Status = DuplicateReviewStatus.Merged;
+            duplicate.ReviewedByUserId = reviewedByUserId;
+            duplicate.ReviewedAt = DateTimeOffset.UtcNow;
+            duplicate.Notes = notes;
         }
         else
         {
@@ -210,10 +231,7 @@ public sealed class DuplicateDetectionService(
                 Notes = notes
             };
             dbContext.PotentialDuplicates.Add(newDuplicate);
-            await dbContext.SaveChangesAsync(cancellationToken);
         }
-
-        logger.LogInformation("Merged paper {MergePaperId} into {KeepPaperId}", mergeIntoPaperId, keepPaperId);
     }
 
     public async Task ComputeDuplicatePairsAsync(double threshold, CancellationToken cancellationToken = default)
