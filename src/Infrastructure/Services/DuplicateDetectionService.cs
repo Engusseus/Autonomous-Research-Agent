@@ -146,50 +146,25 @@ public sealed class DuplicateDetectionService(
             throw new NotFoundException(nameof(Paper), keepPaperId);
         }
 
-        var summariesToUpdate = await dbContext.PaperSummaries
+        await dbContext.PaperSummaries
             .Where(s => s.PaperId == mergeIntoPaperId)
-            .ToListAsync(cancellationToken);
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.PaperId, keepPaperId), cancellationToken);
 
-        foreach (var summary in summariesToUpdate)
-        {
-            summary.PaperId = keepPaperId;
-        }
-
-        var documentsToUpdate = await dbContext.PaperDocuments
+        await dbContext.PaperDocuments
             .Where(d => d.PaperId == mergeIntoPaperId)
-            .ToListAsync(cancellationToken);
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.PaperId, keepPaperId), cancellationToken);
 
-        foreach (var document in documentsToUpdate)
-        {
-            document.PaperId = keepPaperId;
-        }
-
-        var embeddingsToUpdate = await dbContext.PaperEmbeddings
+        await dbContext.PaperEmbeddings
             .Where(e => e.PaperId == mergeIntoPaperId)
-            .ToListAsync(cancellationToken);
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.PaperId, keepPaperId), cancellationToken);
 
-        foreach (var embedding in embeddingsToUpdate)
-        {
-            embedding.PaperId = keepPaperId;
-        }
-
-        var citationsWhereFrom = await dbContext.PaperCitations
+        await dbContext.PaperCitations
             .Where(c => c.SourcePaperId == mergeIntoPaperId)
-            .ToListAsync(cancellationToken);
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.SourcePaperId, keepPaperId), cancellationToken);
 
-        foreach (var citation in citationsWhereFrom)
-        {
-            citation.SourcePaperId = keepPaperId;
-        }
-
-        var citationsWhereTo = await dbContext.PaperCitations
+        await dbContext.PaperCitations
             .Where(c => c.TargetPaperId == mergeIntoPaperId)
-            .ToListAsync(cancellationToken);
-
-        foreach (var citation in citationsWhereTo)
-        {
-            citation.TargetPaperId = keepPaperId;
-        }
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.TargetPaperId, keepPaperId), cancellationToken);
 
         dbContext.Papers.Remove(mergePaper);
 
