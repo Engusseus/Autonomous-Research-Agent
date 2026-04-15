@@ -35,10 +35,41 @@ public sealed class AnalyticsService(ApplicationDbContext dbContext) : IAnalytic
     {
         var papers = dbContext.Papers.AsNoTracking();
         var jobs = dbContext.Jobs.AsNoTracking();
-
-        var totalPapers = await papers.CountAsync(cancellationToken);
-
         var twelveMonthsAgo = DateTimeOffset.UtcNow.AddMonths(-12);
+
+        var totalPapers = await GetTotalPapersAsync(papers, cancellationToken);
+        var papersOverTimeResult = await GetPapersOverTimeAsync(papers, twelveMonthsAgo, cancellationToken);
+        var papersBySource = await GetPapersBySourceAsync(papers, cancellationToken);
+        var papersByStatus = await GetPapersByStatusAsync(papers, cancellationToken);
+        var papersByVenue = await GetPapersByVenueAsync(papers, cancellationToken);
+        var papersByYear = await GetPapersByYearAsync(papers, cancellationToken);
+        var jobThroughput = await GetJobThroughputAsync(jobs, twelveMonthsAgo, papersOverTimeResult.RawData, cancellationToken);
+        var searchQueryVolume = await GetSearchQueryVolumeAsync(cancellationToken);
+        var avgProcessingTime = await GetAverageProcessingTimeAsync(jobs, twelveMonthsAgo, cancellationToken);
+        var topKeywords = await GetTopKeywordsAsync(papers, cancellationToken);
+
+        return new AnalyticsDto(
+            totalPapers,
+            papersOverTimeResult.Dtos,
+            papersBySource,
+            papersByStatus,
+            papersByVenue,
+            papersByYear,
+            jobThroughput,
+            searchQueryVolume,
+            avgProcessingTime,
+            topKeywords
+        );
+    }
+
+    private async Task<int> GetTotalPapersAsync(IQueryable<Paper> papers, CancellationToken cancellationToken)
+    {
+        return await papers.CountAsync(cancellationToken);
+    }
+
+    private async Task<(IReadOnlyList<PaperOverTimeDto> Dtos, List<(int Year, int Month)> RawData)> GetPapersOverTimeAsync(
+        IQueryable<Paper> papers, DateTimeOffset twelveMonthsAgo, CancellationToken cancellationToken)
+    {
         var papersOverTime = await papers
             .Where(p => p.CreatedAt >= twelveMonthsAgo)
             .GroupBy(p => new { p.CreatedAt.Year, p.CreatedAt.Month })
@@ -46,40 +77,60 @@ public sealed class AnalyticsService(ApplicationDbContext dbContext) : IAnalytic
             .OrderBy(x => x.Year).ThenBy(x => x.Month)
             .ToListAsync(cancellationToken);
 
-        var papersOverTimeDtos = papersOverTime
+        var dtos = papersOverTime
             .Select(x => new PaperOverTimeDto($"{x.Year}-{x.Month:D2}", x.Count))
             .ToList();
 
-        var papersBySource = await papers
+        var rawData = papersOverTime.Select(x => (x.Year, x.Month)).ToList();
+
+        return (dtos, rawData);
+    }
+
+    private async Task<IReadOnlyList<PaperSourceCountDto>> GetPapersBySourceAsync(IQueryable<Paper> papers, CancellationToken cancellationToken)
+    {
+        return await papers
             .GroupBy(p => p.Source)
             .Select(g => new PaperSourceCountDto(g.Key.ToString(), g.Count()))
             .ToListAsync(cancellationToken);
+    }
 
-        var papersByStatus = await papers
+    private async Task<IReadOnlyList<PaperStatusCountDto>> GetPapersByStatusAsync(IQueryable<Paper> papers, CancellationToken cancellationToken)
+    {
+        return await papers
             .GroupBy(p => p.Status)
             .Select(g => new PaperStatusCountDto(g.Key.ToString(), g.Count()))
             .ToListAsync(cancellationToken);
+    }
 
-        var papersByVenue = await papers
+    private async Task<IReadOnlyList<PaperVenueCountDto>> GetPapersByVenueAsync(IQueryable<Paper> papers, CancellationToken cancellationToken)
+    {
+        return await papers
             .Where(p => !string.IsNullOrEmpty(p.Venue))
             .GroupBy(p => p.Venue!)
             .Select(g => new PaperVenueCountDto(g.Key, g.Count()))
             .OrderByDescending(x => x.Count)
             .Take(20)
             .ToListAsync(cancellationToken);
+    }
 
-        var papersByYear = await papers
+    private async Task<IReadOnlyList<PaperYearCountDto>> GetPapersByYearAsync(IQueryable<Paper> papers, CancellationToken cancellationToken)
+    {
+        return await papers
             .Where(p => p.Year.HasValue)
             .GroupBy(p => p.Year!.Value)
             .Select(g => new PaperYearCountDto(g.Key, g.Count()))
             .OrderByDescending(x => x.Year)
             .ToListAsync(cancellationToken);
+    }
 
+    private async Task<IReadOnlyList<JobThroughputDto>> GetJobThroughputAsync(
+        IQueryable<Job> jobs, DateTimeOffset twelveMonthsAgo, List<(int Year, int Month)> paperMonths, CancellationToken cancellationToken)
+    {
         var twelveMonthsJobs = await jobs
             .Where(j => j.CreatedAt >= twelveMonthsAgo)
             .ToListAsync(cancellationToken);
 
-        var jobThroughput = papersOverTime
+        return paperMonths
             .Select(x =>
             {
                 var monthStart = new DateTimeOffset(x.Year, x.Month, 1, 0, 0, 0, TimeSpan.Zero);
@@ -95,73 +146,65 @@ public sealed class AnalyticsService(ApplicationDbContext dbContext) : IAnalytic
                 );
             })
             .ToList();
+    }
 
-        IReadOnlyList<SearchQueryVolumeDto> searchQueryVolume;
-        var hasSavedSearchCreatedAt = dbContext.SavedSearches.AsNoTracking().Any();
-        if (hasSavedSearchCreatedAt)
+    private async Task<IReadOnlyList<SearchQueryVolumeDto>> GetSearchQueryVolumeAsync(CancellationToken cancellationToken)
+    {
+        var hasSavedSearchCreatedAt = await dbContext.SavedSearches.AsNoTracking().AnyAsync(cancellationToken);
+        if (!hasSavedSearchCreatedAt)
         {
-            var thirtyDaysAgo = DateTimeOffset.UtcNow.AddDays(-30);
-            var searches = await dbContext.SavedSearches.AsNoTracking()
-                .Where(s => s.CreatedAt >= thirtyDaysAgo)
-                .GroupBy(s => s.CreatedAt.Date)
-                .Select(g => new { g.Key, Count = g.Count() })
-                .OrderBy(x => x.Key)
-                .ToListAsync(cancellationToken);
-
-            searchQueryVolume = searches
-                .Select(x => new SearchQueryVolumeDto(x.Key.ToString("yyyy-MM-dd"), x.Count))
-                .ToList();
-        }
-        else
-        {
-            searchQueryVolume = [];
+            return [];
         }
 
+        var thirtyDaysAgo = DateTimeOffset.UtcNow.AddDays(-30);
+        var searches = await dbContext.SavedSearches.AsNoTracking()
+            .Where(s => s.CreatedAt >= thirtyDaysAgo)
+            .GroupBy(s => s.CreatedAt.Date)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .OrderBy(x => x.Key)
+            .ToListAsync(cancellationToken);
+
+        return searches
+            .Select(x => new SearchQueryVolumeDto(x.Key.ToString("yyyy-MM-dd"), x.Count))
+            .ToList();
+    }
+
+    private async Task<long> GetAverageProcessingTimeAsync(IQueryable<Job> jobs, DateTimeOffset twelveMonthsAgo, CancellationToken cancellationToken)
+    {
         var completedJobs = await jobs
             .Where(j => j.Status == JobStatus.Completed && j.UpdatedAt >= twelveMonthsAgo)
             .ToListAsync(cancellationToken);
 
-        long avgProcessingTime = 0;
-        if (completedJobs.Count > 0)
+        if (completedJobs.Count == 0)
         {
-            var processingTimes = new List<long>();
-            foreach (var job in completedJobs)
+            return 0;
+        }
+
+        var processingTimes = new List<long>();
+        foreach (var job in completedJobs)
+        {
+            if (!string.IsNullOrEmpty(job.ResultJson))
             {
-                if (!string.IsNullOrEmpty(job.ResultJson))
+                try
                 {
-                    try
+                    using var doc = JsonDocument.Parse(job.ResultJson);
+                    if (doc.RootElement.TryGetProperty("processingTimeMs", out var prop) && prop.ValueKind == JsonValueKind.Number)
                     {
-                        using var doc = JsonDocument.Parse(job.ResultJson);
-                        if (doc.RootElement.TryGetProperty("processingTimeMs", out var prop) && prop.ValueKind == JsonValueKind.Number)
-                        {
-                            processingTimes.Add(prop.GetInt64());
-                        }
-                    }
-                    catch
-                    {
+                        processingTimes.Add(prop.GetInt64());
                     }
                 }
-            }
-            if (processingTimes.Count > 0)
-            {
-                avgProcessingTime = (long)processingTimes.Average();
+                catch
+                {
+                }
             }
         }
 
-        var topKeywords = await GetTopKeywordsAsync(papers, cancellationToken);
+        if (processingTimes.Count > 0)
+        {
+            return (long)processingTimes.Average();
+        }
 
-        return new AnalyticsDto(
-            totalPapers,
-            papersOverTimeDtos,
-            papersBySource,
-            papersByStatus,
-            papersByVenue,
-            papersByYear,
-            jobThroughput,
-            searchQueryVolume,
-            avgProcessingTime,
-            topKeywords
-        );
+        return 0;
     }
 
     private async Task<IReadOnlyList<TopKeywordDto>> GetTopKeywordsAsync(
