@@ -5,8 +5,8 @@ public sealed class JwtOptions
     public const string SectionName = "Jwt";
 
     public string? Authority { get; set; }
-    public string? Audience { get; set; }
-    public string? Issuer { get; set; }
+    public string Audience { get; set; } = string.Empty;
+    public string Issuer { get; set; } = string.Empty;
     public string SigningKey { get; set; } = "replace-this-development-key-with-a-secure-value";
     public bool RequireHttpsMetadata { get; set; } = false;
     public int AccessTokenExpirationMinutes { get; set; } = 15;

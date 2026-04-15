@@ -64,9 +64,9 @@ public sealed class TokenService(IOptions<JwtOptions> jwtOptions, ILogger<TokenS
             {
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(key),
-                ValidateIssuer = !string.IsNullOrWhiteSpace(_jwtOptions.Issuer),
+                ValidateIssuer = true,
                 ValidIssuer = _jwtOptions.Issuer,
-                ValidateAudience = !string.IsNullOrWhiteSpace(_jwtOptions.Audience),
+                ValidateAudience = true,
                 ValidAudience = _jwtOptions.Audience,
                 ValidateLifetime = true,
                 ClockSkew = TimeSpan.FromMinutes(2)
