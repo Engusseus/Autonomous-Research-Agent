@@ -395,32 +395,34 @@ public sealed class PaperService(
 
     private async Task<List<SemanticScholarPaperImportModel>> ImportFromArxivAsync(IReadOnlyCollection<string> queries, CancellationToken cancellationToken)
     {
-        var results = new List<SemanticScholarPaperImportModel>();
-
-        foreach (var query in queries.Where(q => !string.IsNullOrWhiteSpace(q)))
-        {
-            var normalizedQuery = query.Trim();
-            if (normalizedQuery.StartsWith("arxiv:", StringComparison.OrdinalIgnoreCase) ||
-                normalizedQuery.StartsWith("arXiv:", StringComparison.OrdinalIgnoreCase))
+        var tasks = queries
+            .Where(q => !string.IsNullOrWhiteSpace(q))
+            .Select(async query =>
             {
-                var arxivId = normalizedQuery.Contains(":")
-                    ? normalizedQuery[(normalizedQuery.IndexOf(':') + 1)..]
-                    : normalizedQuery;
-
-                var paper = await arxivClient.GetPaperAsync(arxivId, cancellationToken);
-                if (paper is not null)
+                var normalizedQuery = query.Trim();
+                if (normalizedQuery.StartsWith("arxiv:", StringComparison.OrdinalIgnoreCase) ||
+                    normalizedQuery.StartsWith("arXiv:", StringComparison.OrdinalIgnoreCase))
                 {
-                    results.Add(MapArxivPaperToImportModel(paper));
-                }
-            }
-            else
-            {
-                var papers = await arxivClient.SearchAsync(query, cancellationToken);
-                results.AddRange(papers.Select(MapArxivPaperToImportModel));
-            }
-        }
+                    var arxivId = normalizedQuery.Contains(":")
+                        ? normalizedQuery[(normalizedQuery.IndexOf(':') + 1)..]
+                        : normalizedQuery;
 
-        return results
+                    var paper = await arxivClient.GetPaperAsync(arxivId, cancellationToken);
+                    return paper is not null
+                        ? new List<SemanticScholarPaperImportModel> { MapArxivPaperToImportModel(paper) }
+                        : new List<SemanticScholarPaperImportModel>();
+                }
+                else
+                {
+                    var papers = await arxivClient.SearchAsync(query, cancellationToken);
+                    return papers.Select(MapArxivPaperToImportModel).ToList();
+                }
+            });
+
+        var resultsArray = await Task.WhenAll(tasks);
+
+        return resultsArray
+            .SelectMany(x => x)
             .GroupBy(x => x.SemanticScholarId)
             .Select(group => group.First())
             .ToList();
@@ -428,18 +430,21 @@ public sealed class PaperService(
 
     private async Task<List<SemanticScholarPaperImportModel>> ImportFromDoiAsync(IReadOnlyCollection<string> queries, CancellationToken cancellationToken)
     {
-        var results = new List<SemanticScholarPaperImportModel>();
-
-        foreach (var query in queries.Where(q => !string.IsNullOrWhiteSpace(q)))
-        {
-            var paper = await crossRefClient.GetByDoiAsync(query.Trim(), cancellationToken);
-            if (paper is not null)
+        var tasks = queries
+            .Where(q => !string.IsNullOrWhiteSpace(q))
+            .Select(async query =>
             {
-                results.Add(MapCrossRefPaperToImportModel(paper));
-            }
-        }
+                var paper = await crossRefClient.GetByDoiAsync(query.Trim(), cancellationToken);
+                return paper is not null
+                    ? new List<SemanticScholarPaperImportModel> { MapCrossRefPaperToImportModel(paper) }
+                    : new List<SemanticScholarPaperImportModel>();
+            });
 
-        return results;
+        var resultsArray = await Task.WhenAll(tasks);
+
+        return resultsArray
+            .SelectMany(x => x)
+            .ToList();
     }
 
     private static SemanticScholarPaperImportModel MapArxivPaperToImportModel(ArxivPaper paper)
