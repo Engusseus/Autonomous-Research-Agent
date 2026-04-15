@@ -707,6 +707,22 @@ references: array of objects with title, authors, year, venue
             throw new InvalidOperationException($"Saved search {savedSearchId} not found.");
         }
 
+        var (newPapersCount, totalResultsFound) = await ProcessWatchlistSearchAsync(savedSearch, cancellationToken);
+
+        savedSearch.LastRunAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        job.ResultJson = JsonSerializer.SerializeToNode(new
+        {
+            savedSearchId = savedSearch.Id,
+            newPapersCount = newPapersCount,
+            totalResultsFound = totalResultsFound,
+            ranAt = DateTimeOffset.UtcNow
+        })?.ToJsonString();
+    }
+
+    private async Task<(int NewPapersCount, int TotalResultsFound)> ProcessWatchlistSearchAsync(SavedSearch savedSearch, CancellationToken cancellationToken)
+    {
         var queries = new List<string> { savedSearch.Query };
         if (!string.IsNullOrWhiteSpace(savedSearch.Field))
         {
@@ -764,16 +780,7 @@ references: array of objects with title, authors, year, venue
             dbContext.Notifications.Add(notification);
         }
 
-        savedSearch.LastRunAt = DateTimeOffset.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        job.ResultJson = JsonSerializer.SerializeToNode(new
-        {
-            savedSearchId = savedSearch.Id,
-            newPapersCount = newCount,
-            totalResultsFound = searchResults.Count,
-            ranAt = DateTimeOffset.UtcNow
-        })?.ToJsonString();
+        return (newCount, searchResults.Count);
     }
 
     private async Task RunGenerateClusterMapAsync(Job job, CancellationToken cancellationToken)
