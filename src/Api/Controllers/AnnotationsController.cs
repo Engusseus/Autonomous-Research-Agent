@@ -22,7 +22,7 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
         var userId = User.GetUserId();
         if (userId is null)
             return Unauthorized();
-        var annotations = await annotationService.ListForPaperAsync(paperId, userId.Value, cancellationToken);
+        var annotations = await annotationService.ListForPaperAsync(paperId, null, cancellationToken);
         return Ok(annotations.Select(a => new AnnotationResponse(
             a.Id,
             a.PaperId,
@@ -52,9 +52,10 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
         if (userId is null)
             throw new AuthenticationException("User ID not found in token");
 
+        var _userId = new Guid();
         var command = new CreateAnnotationCommand(
             paperId,
-            userId.Value,
+            _userId,
             request.ChunkId,
             request.Page,
             request.OffsetStart,

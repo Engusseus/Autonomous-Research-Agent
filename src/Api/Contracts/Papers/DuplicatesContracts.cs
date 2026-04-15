@@ -11,7 +11,7 @@ public sealed record DuplicatePairResponse(
     double SimilarityScore,
     string Status,
     int? ReviewedByUserId,
-    DateTime? ReviewedAt,
+    DateTimeOffset? ReviewedAt,
     string? Notes,
     DateTimeOffset CreatedAt);
 

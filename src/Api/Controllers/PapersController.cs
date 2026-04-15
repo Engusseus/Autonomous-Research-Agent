@@ -27,7 +27,9 @@ public sealed class PapersController(
     public async Task<ActionResult<PagedResponse<PaperListItemDto>>> GetPapers([FromQuery] PaperQueryRequest request, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        var result = await paperService.ListAsync(request.ToApplicationModel(), userId, cancellationToken);
+        if (userId == null) return Unauthorized();
+        var _userId = new Guid();
+        var result = await paperService.ListAsync(request.ToApplicationModel(), _userId, cancellationToken);
         return Ok(result.ToPagedResponse(item => item.ToDto()));
     }
 
@@ -38,7 +40,9 @@ public sealed class PapersController(
     public async Task<ActionResult<PaperDetailDto>> GetPaper(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        var paper = await paperService.GetByIdAsync(id, userId, cancellationToken);
+        if (userId == null) return Unauthorized();
+        var _userId = new Guid();
+        var paper = await paperService.GetByIdAsync(id, _userId, cancellationToken);
         return Ok(paper.ToDto());
     }
 

@@ -23,7 +23,8 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
         CancellationToken cancellationToken = default)
     {
         var userId = GetUserId();
-        var query = new ReadingSessionQuery(userId, status, pageNumber, pageSize);
+        if (userId == null) return Unauthorized();
+        var query = new ReadingSessionQuery(userId.Value, status, pageNumber, pageSize);
         var result = await readingSessionService.ListAsync(query, cancellationToken);
 
         return Ok(result.ToPagedResponse(MapToResponse));
@@ -36,6 +37,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
     public async Task<ActionResult<ReadingSessionResponse>> GetReadingSession(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
+        if (userId == null) return Unauthorized();
         var result = await readingSessionService.GetByIdAsync(id, cancellationToken);
         if (result is null)
         {
@@ -59,7 +61,8 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
         CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        var command = new CreateReadingSessionCommand(userId, request.PaperId);
+        if (userId == null) return Unauthorized();
+        var command = new CreateReadingSessionCommand(userId.Value, request.PaperId);
         var created = await readingSessionService.CreateAsync(command, cancellationToken);
         return CreatedAtAction(nameof(GetReadingSession), new { id = created.Id }, MapToResponse(created));
     }
@@ -75,6 +78,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
         CancellationToken cancellationToken)
     {
         var userId = GetUserId();
+        if (userId == null) return Unauthorized();
         var existing = await readingSessionService.GetByIdAsync(id, cancellationToken);
         if (existing == null)
             return NotFound();
@@ -93,6 +97,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
     public async Task<IActionResult> DeleteReadingSession(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
+        if (userId == null) return Unauthorized();
         var existing = await readingSessionService.GetByIdAsync(id, cancellationToken);
         if (existing == null)
             return NotFound();
