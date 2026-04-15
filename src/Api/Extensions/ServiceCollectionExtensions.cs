@@ -60,9 +60,9 @@ public static class ServiceCollectionExtensions
                 {
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
-                        ValidateIssuer = !string.IsNullOrWhiteSpace(jwtOptions.Issuer),
+                        ValidateIssuer = true,
                         ValidIssuer = jwtOptions.Issuer,
-                        ValidateAudience = !string.IsNullOrWhiteSpace(jwtOptions.Audience),
+                        ValidateAudience = true,
                         ValidAudience = jwtOptions.Audience,
                         ValidateIssuerSigningKey = true,
                         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey)),
