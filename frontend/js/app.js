@@ -3,7 +3,7 @@
 // Hash-based SPA router + initialization
 // ═══════════════════════════════════════════════════
 
-import { checkHealth, getConfig, saveConfig, escapeHtml } from './api.js';
+import { checkHealth, getConfig, saveConfig, escapeHtml, login, logout } from './api.js';
 import { clear, toast, notificationBell } from './components.js';
 
 // ── Route definitions ────────────────────────────
@@ -150,14 +150,16 @@ async function updateConnectionStatus() {
 function initSettings() {
   const modal = document.getElementById('settings-modal');
   const urlInput = document.getElementById('api-url-input');
-  const tokenInput = document.getElementById('api-token-input');
+  const emailInput = document.getElementById('auth-email-input');
+  const passwordInput = document.getElementById('auth-password-input');
+  const loginBtn = document.getElementById('auth-login-btn');
+  const logoutBtn = document.getElementById('auth-logout-btn');
   const saveBtn = document.getElementById('settings-save');
   const settingsBtn = document.getElementById('settings-btn');
 
   function open() {
     const config = getConfig();
     urlInput.value = config.baseUrl;
-    tokenInput.value = config.token;
     modal.hidden = false;
     requestAnimationFrame(() => urlInput.focus());
   }
@@ -175,11 +177,49 @@ function initSettings() {
   modal.querySelector('.modal-backdrop').addEventListener('click', close);
 
   saveBtn.addEventListener('click', () => {
-    saveConfig(urlInput.value.replace(/\/+$/, ''), tokenInput.value);
+    saveConfig(urlInput.value.replace(/\/+$/, ''));
     close();
     toast('Settings saved', 'success');
     updateConnectionStatus();
     handleRoute(); // Reload current page
+  });
+
+  loginBtn.addEventListener('click', async () => {
+    try {
+      const email = emailInput.value;
+      const password = passwordInput.value;
+      if (!email || !password) {
+        toast('Please enter email and password', 'warning');
+        return;
+      }
+
+      const oldBtnText = loginBtn.textContent;
+      loginBtn.textContent = 'LOGGING IN...';
+      loginBtn.disabled = true;
+
+      await login(email, password);
+      toast('Login successful', 'success');
+      passwordInput.value = '';
+
+      updateConnectionStatus();
+      handleRoute();
+    } catch (err) {
+      toast(`Login failed: ${err.message}`, 'error');
+    } finally {
+      loginBtn.textContent = 'LOGIN';
+      loginBtn.disabled = false;
+    }
+  });
+
+  logoutBtn.addEventListener('click', async () => {
+    try {
+      await logout();
+      toast('Logged out', 'success');
+      updateConnectionStatus();
+      handleRoute();
+    } catch (err) {
+      toast(`Logout failed: ${err.message}`, 'error');
+    }
   });
 
   // Escape key

@@ -11,23 +11,22 @@ function escapeHtml(text) {
 const CACHE = new Map();
 const CACHE_TTL = 30_000; // 30 seconds
 
+// Ensure any old tokens are cleared from localStorage
+localStorage.removeItem('ara_api_token');
+
 function getConfig() {
   return {
     baseUrl: localStorage.getItem('ara_api_url') ?? 'http://localhost:5000',
-    token: localStorage.getItem('ara_api_token') || '',
   };
 }
 
-function saveConfig(baseUrl, token) {
+function saveConfig(baseUrl) {
   localStorage.setItem('ara_api_url', baseUrl);
-  localStorage.setItem('ara_api_token', token);
   CACHE.clear();
 }
 
 function headers() {
   const h = { 'Content-Type': 'application/json', Accept: 'application/json' };
-  const { token } = getConfig();
-  if (token) h['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
   return h;
 }
 
@@ -65,7 +64,7 @@ async function request(method, path, body = null, { cache = false, signal } = {}
     if (cached) return cached;
   }
 
-  const opts = { method, headers: headers(), signal };
+  const opts = { method, headers: headers(), signal, credentials: 'include' };
   if (body && method !== 'GET') opts.body = JSON.stringify(body);
 
   const res = await fetch(url, opts);
@@ -135,10 +134,9 @@ export function importPapers(data) {
 }
 
 export async function exportPapers(format) {
-  const { baseUrl, token } = getConfig();
+  const { baseUrl } = getConfig();
   const h = { Accept: '*/*' };
-  if (token) h['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
-  const res = await fetch(`${baseUrl}/api/v1/papers/export?format=${encodeURIComponent(format)}`, { headers: h });
+  const res = await fetch(`${baseUrl}/api/v1/papers/export?format=${encodeURIComponent(format)}`, { headers: h, credentials: 'include' });
   if (!res.ok) {
     let detail = '';
     try {
@@ -328,16 +326,16 @@ export function getTrends(params = {}, signal) {
 // ── Chat ─────────────────────────────────────────
 
 export async function streamChat(data, { signal } = {}) {
-  const { baseUrl, token } = getConfig();
+  const { baseUrl } = getConfig();
   const url = `${baseUrl}/api/v1/chat`;
   const h = { 'Content-Type': 'application/json' };
-  if (token) h['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
 
   const res = await fetch(url, {
     method: 'POST',
     headers: h,
     body: JSON.stringify(data),
     signal,
+    credentials: 'include'
   });
 
   if (!res.ok) {
@@ -525,10 +523,9 @@ export function deleteWebhook(id) {
 // ── Collections ─────────────────────────────────
 
 export async function exportCollection(collectionId, filename) {
-  const { baseUrl, token } = getConfig();
+  const { baseUrl } = getConfig();
   const h = { Accept: '*/*' };
-  if (token) h['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
-  const res = await fetch(`${baseUrl}/api/v1/collections/${collectionId}/export`, { headers: h });
+  const res = await fetch(`${baseUrl}/api/v1/collections/${collectionId}/export`, { headers: h, credentials: 'include' });
   if (!res.ok) {
     let detail = '';
     try {
@@ -548,6 +545,16 @@ export async function exportCollection(collectionId, filename) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// ── Auth ─────────────────────────────────────────
+
+export function login(email, password) {
+  return request('POST', '/api/v1/auth/login', { email, password });
+}
+
+export function logout() {
+  return request('POST', '/api/v1/auth/logout');
 }
 
 // ── Config re-export ─────────────────────────────

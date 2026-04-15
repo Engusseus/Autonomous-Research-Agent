@@ -107,9 +107,20 @@
         <label class="field-label">API BASE URL</label>
         <input id="api-url-input" type="url" class="input" placeholder="http://localhost:5000">
         <p class="field-hint">The base URL of the ARA API server</p>
-        <label class="field-label">AUTH TOKEN</label>
-        <input id="api-token-input" type="password" class="input" placeholder="Bearer token (optional)">
-        <p class="field-hint">JWT token for authenticated endpoints</p>
+
+        <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid var(--c-border);">
+        <h3 style="margin-top: 0; margin-bottom: 1rem; font-size: 14px; color: var(--c-text);">AUTHENTICATION</h3>
+
+        <label class="field-label">EMAIL</label>
+        <input id="auth-email-input" type="email" class="input" placeholder="user@example.com">
+
+        <label class="field-label" style="margin-top: 1rem;">PASSWORD</label>
+        <input id="auth-password-input" type="password" class="input" placeholder="Password">
+
+        <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+          <button id="auth-login-btn" class="btn btn-primary" type="button" style="flex: 1;">LOGIN</button>
+          <button id="auth-logout-btn" class="btn btn-ghost" type="button" style="flex: 1;">LOGOUT</button>
+        </div>
       </div>
       <div class="modal-footer">
         <button id="settings-save" class="btn btn-primary" type="button">SAVE</button>

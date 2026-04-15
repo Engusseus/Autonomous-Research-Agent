@@ -17,6 +17,7 @@ public sealed class AuthController(IAuthService authService) : ControllerBase
     public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
     {
         var result = await authService.LoginAsync(request.ToCommand(), cancellationToken);
+        SetTokenCookie(result.AccessToken, result.ExpiresAt);
         return Ok(result.ToResponse());
     }
 
@@ -27,6 +28,7 @@ public sealed class AuthController(IAuthService authService) : ControllerBase
     public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken)
     {
         var result = await authService.RegisterAsync(request.ToCommand(), cancellationToken);
+        SetTokenCookie(result.AccessToken, result.ExpiresAt);
         return CreatedAtAction(nameof(Login), result.ToResponse());
     }
 
@@ -37,7 +39,33 @@ public sealed class AuthController(IAuthService authService) : ControllerBase
     public async Task<ActionResult<AuthResponse>> RefreshToken([FromBody] TokenRefreshRequest request, CancellationToken cancellationToken)
     {
         var result = await authService.RefreshTokenAsync(request.ToCommand(), cancellationToken);
+        SetTokenCookie(result.AccessToken, result.ExpiresAt);
         return Ok(result.ToResponse());
+    }
+
+    [HttpPost("logout")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult Logout()
+    {
+        Response.Cookies.Delete("ara_api_token", new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict
+        });
+        return Ok();
+    }
+
+    private void SetTokenCookie(string token, DateTimeOffset expiresAt)
+    {
+        var cookieOptions = new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Expires = expiresAt
+        };
+        Response.Cookies.Append("ara_api_token", token, cookieOptions);
     }
 }
 

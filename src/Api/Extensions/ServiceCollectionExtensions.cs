@@ -70,6 +70,18 @@ public static class ServiceCollectionExtensions
                         ClockSkew = TimeSpan.FromMinutes(2)
                     };
                 }
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        if (context.Request.Cookies.TryGetValue("ara_api_token", out var token))
+                        {
+                            context.Token = token;
+                        }
+                        return Task.CompletedTask;
+                    }
+                };
             });
 
         return services;
