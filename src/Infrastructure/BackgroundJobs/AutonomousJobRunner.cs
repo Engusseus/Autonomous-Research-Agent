@@ -440,14 +440,12 @@ confidence: number
                     childActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                     childJob.Status = JobStatus.Failed;
                     childJob.ErrorMessage = ex.Message;
-                    await dbContext.SaveChangesAsync(cancellationToken);
 
                     foreach (var completedChild in completedChildJobs)
                     {
                         completedChild.Status = JobStatus.Superseded;
                         _logger.LogInformation("Marked child job {ChildJobId} as superseded due to sibling failure in parent job {ParentJobId}", completedChild.Id, job.Id);
                     }
-                    await dbContext.SaveChangesAsync(cancellationToken);
 
                     job.Status = JobStatus.Failed;
                     job.ErrorMessage = $"Child job {childJob.Id} failed: {ex.Message}";
