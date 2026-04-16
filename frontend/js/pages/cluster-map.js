@@ -99,7 +99,7 @@ function renderScatterPlot(container, papers, navigate) {
       tooltip.innerHTML = `
         <div style="font-weight:600;margin-bottom:4px;max-width:250px">${escapeHtml(paper.title)}</div>
         <div style="color:#666;font-size:12px">${escapeHtml(formatAuthors(paper.authors, 2))}</div>
-        ${paper.year ? `<div style="color:#666;font-size:12px">${paper.year}</div>` : ''}
+        ${paper.year ? `<div style="color:#666;font-size:12px">${escapeHtml(String(paper.year))}</div>` : ''}
       `;
       tooltip.style.display = 'block';
       tooltip.style.left = (e.clientX + 15) + 'px';

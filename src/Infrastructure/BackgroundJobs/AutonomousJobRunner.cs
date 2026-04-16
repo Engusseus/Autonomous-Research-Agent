@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AutonomousResearchAgent.Application.Common;
@@ -920,13 +921,16 @@ Types must be exactly: Method, Dataset, Metric, or Model
     private static List<(double X, double Y)> ComputeUmapCoordinates(List<float[]> vectors)
     {
         var n = vectors.Count;
-        return ComputeTSneCoordinates(vectors, n, 100, 42);
+        return ComputeTSneCoordinates(vectors, n, 100);
     }
 
-    private static List<(double X, double Y)> ComputeTSneCoordinates(List<float[]> vectors, int n, int iterations, int seed)
+    private static List<(double X, double Y)> ComputeTSneCoordinates(List<float[]> vectors, int n, int iterations)
     {
         var coords = new List<(double X, double Y)>();
-        var random = new Random(seed);
+        using var rng = RandomNumberGenerator.Create();
+        var bytes = new byte[4];
+        rng.GetBytes(bytes);
+        var random = new Random(BitConverter.ToInt32(bytes, 0));
 
         for (int i = 0; i < n; i++)
         {

@@ -241,8 +241,8 @@ function renderForceGraph(container, graph, navigate, currentPaperId) {
       circle.setAttribute('fill', 'var(--c-primary)');
       tooltip.innerHTML = `
         <strong>${escapeHtml(node.title)}</strong><br/>
-        <span style="color:var(--c-text-secondary)">Year: ${node.year || 'Unknown'}</span><br/>
-        <span style="color:var(--c-text-secondary)">Citations: ${node.citationCount}</span><br/>
+        <span style="color:var(--c-text-secondary)">Year: ${escapeHtml(node.year) || 'Unknown'}</span><br/>
+        <span style="color:var(--c-text-secondary)">Citations: ${escapeHtml(String(node.citationCount))}</span><br/>
         <span style="color:var(--c-text-secondary)">${node.isInDatabase ? 'In Database' : 'External'}</span>
       `;
       tooltip.style.display = 'block';
