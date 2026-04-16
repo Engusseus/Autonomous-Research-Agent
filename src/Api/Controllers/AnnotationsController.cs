@@ -18,7 +18,7 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
         Guid paperId,
         CancellationToken cancellationToken = default)
     {
-        var userId = User.GetUserId();
+        var userId = User.GetUserId() ?? default;
         if (userId is null)
             return Unauthorized();
         var annotations = await annotationService.ListForPaperAsync(paperId, userId.Value, cancellationToken);
@@ -47,7 +47,7 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
         [FromBody] CreateAnnotationRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = User.GetUserId();
+        var userId = User.GetUserId() ?? default;
         if (userId is null)
             throw new AuthenticationException("User ID not found in token");
 

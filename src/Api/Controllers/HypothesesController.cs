@@ -17,7 +17,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
     [ProducesResponseType(typeof(IReadOnlyList<HypothesisResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<HypothesisResponse>>> GetHypotheses(CancellationToken cancellationToken)
     {
-        var userId = User.GetUserId();
+        var userId = User.GetUserId() ?? default;
         if (userId is null)
             return Unauthorized();
         var results = await hypothesisService.GetAllByUserAsync(userId.Value, cancellationToken);
@@ -42,7 +42,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<HypothesisResponse>> CreateHypothesis([FromBody] CreateHypothesisRequest request, CancellationToken cancellationToken)
     {
-        var userId = User.GetUserId();
+        var userId = User.GetUserId() ?? default;
         if (userId is null)
             return Unauthorized();
         var command = new CreateHypothesisCommand(
@@ -61,7 +61,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<HypothesisResponse>> UpdateHypothesis(Guid id, [FromBody] UpdateHypothesisRequest request, CancellationToken cancellationToken)
     {
-        var userId = User.GetUserId();
+        var userId = User.GetUserId() ?? default;
         if (userId is null)
             return Unauthorized();
         var existing = await hypothesisService.GetByIdAsync(id, cancellationToken);
@@ -94,7 +94,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> DeleteHypothesis(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.GetUserId();
+        var userId = User.GetUserId() ?? default;
         if (userId is null)
             return Unauthorized();
         var existing = await hypothesisService.GetByIdAsync(id, cancellationToken);

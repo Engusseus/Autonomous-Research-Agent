@@ -19,7 +19,7 @@ public sealed class CollectionsController(
     [ProducesResponseType(typeof(IReadOnlyCollection<CollectionResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<CollectionResponse>>> GetCollections(CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var collections = await collectionService.ListAsync(userId, cancellationToken);
         return Ok(collections.Select(c => new CollectionResponse(
             c.Id, c.Name, c.Description, c.IsShared, c.PaperCount, c.SortOrder, c.CreatedAt, c.UpdatedAt)).ToList());
@@ -51,7 +51,7 @@ public sealed class CollectionsController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CollectionDetailResponse>> GetCollection(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var collection = await collectionService.GetByIdAsync(id, userId, cancellationToken);
         return Ok(new CollectionDetailResponse(
             collection.Id,
@@ -74,7 +74,7 @@ public sealed class CollectionsController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<CollectionResponse>> CreateCollection([FromBody] CreateCollectionRequest request, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var command = new CreateCollectionCommand(userId, request.Name, request.Description, request.IsShared);
         var created = await collectionService.CreateAsync(command, cancellationToken);
         return CreatedAtAction(nameof(GetCollection), new { id = created.Id }, new CollectionResponse(
@@ -87,7 +87,7 @@ public sealed class CollectionsController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CollectionResponse>> UpdateCollection(Guid id, [FromBody] UpdateCollectionRequest request, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var command = new UpdateCollectionCommand(request.Name, request.Description, request.IsShared);
         var updated = await collectionService.UpdateAsync(id, command, userId, cancellationToken);
         return Ok(new CollectionResponse(
@@ -100,7 +100,7 @@ public sealed class CollectionsController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteCollection(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         await collectionService.DeleteAsync(id, userId, cancellationToken);
         return NoContent();
     }
@@ -112,7 +112,7 @@ public sealed class CollectionsController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> AddPaper(Guid id, Guid paperId, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var command = new AddPaperCommand(paperId);
         await collectionService.AddPaperAsync(id, command, userId, cancellationToken);
         return NoContent();
@@ -124,7 +124,7 @@ public sealed class CollectionsController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RemovePaper(Guid id, Guid paperId, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var command = new RemovePaperCommand(paperId);
         await collectionService.RemovePaperAsync(id, command, userId, cancellationToken);
         return NoContent();
@@ -136,7 +136,7 @@ public sealed class CollectionsController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ReorderPapers(Guid id, [FromBody] ReorderPapersRequest request, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var command = new ReorderPapersCommand(request.PaperIds);
         await collectionService.ReorderPapersAsync(id, command, userId, cancellationToken);
         return NoContent();
@@ -149,7 +149,7 @@ public sealed class CollectionsController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ExportCollection(Guid id, [FromQuery] string format, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var collection = await collectionService.GetByIdAsync(id, userId, cancellationToken);
 
         if (string.Equals(format, "bibtex", StringComparison.OrdinalIgnoreCase))
@@ -170,7 +170,7 @@ public sealed class CollectionsController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ShareCollectionResponse>> ShareCollection(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var token = await collectionService.GenerateShareTokenAsync(id, userId, cancellationToken);
         var shareUrl = $"/{ApiConstants.ApiPrefix}/collections/shared/{token}";
         return Ok(new ShareCollectionResponse(token, shareUrl));
@@ -182,7 +182,7 @@ public sealed class CollectionsController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RevokeSharing(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         await collectionService.RevokeShareTokenAsync(id, userId, cancellationToken);
         return NoContent();
     }

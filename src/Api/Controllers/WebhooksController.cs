@@ -17,7 +17,7 @@ public sealed class WebhooksController(IWebhookService webhookService) : Control
     [ProducesResponseType(typeof(IReadOnlyCollection<WebhookResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<WebhookResponse>>> GetWebhooks(CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var webhooks = await webhookService.ListAsync(userId, cancellationToken);
         return Ok(webhooks.Select(w => new WebhookResponse(
             w.Id,
@@ -35,7 +35,7 @@ public sealed class WebhooksController(IWebhookService webhookService) : Control
         [FromBody] CreateWebhookRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
 
         if (request.Events.Count == 0)
         {
@@ -82,7 +82,7 @@ public sealed class WebhooksController(IWebhookService webhookService) : Control
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteWebhook(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         await webhookService.DeleteAsync(id, userId, cancellationToken);
         return NoContent();
     }

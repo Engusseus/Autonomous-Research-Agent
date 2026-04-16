@@ -26,7 +26,7 @@ public sealed class PapersController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<PagedResponse<PaperListItemDto>>> GetPapers([FromQuery] PaperQueryRequest request, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var result = await paperService.ListAsync(request.ToApplicationModel(), userId, cancellationToken);
         return Ok(result.ToPagedResponse(item => item.ToDto()));
     }
@@ -37,7 +37,7 @@ public sealed class PapersController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<PaperDetailDto>> GetPaper(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         var paper = await paperService.GetByIdAsync(id, userId, cancellationToken);
         return Ok(paper.ToDto());
     }

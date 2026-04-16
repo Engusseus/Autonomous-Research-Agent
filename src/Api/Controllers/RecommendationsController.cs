@@ -21,7 +21,7 @@ public sealed class RecommendationsController(IRecommendationService recommendat
         [FromQuery] int pageSize = 10,
         CancellationToken cancellationToken = default)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? default;
         if (userId is null)
             return Unauthorized();
 

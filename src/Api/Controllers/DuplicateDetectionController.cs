@@ -45,7 +45,7 @@ public sealed class DuplicateDetectionController(IDuplicateDetectionService dupl
         [FromBody] ResolveDuplicateRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = User.GetUserId();
+        var userId = User.GetUserId() ?? default;
         await duplicateDetectionService.ResolveDuplicateAsync(
             id,
             request.IsDuplicate,
@@ -66,7 +66,7 @@ public sealed class DuplicateDetectionController(IDuplicateDetectionService dupl
         [FromBody] MergeDuplicateRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = User.GetUserId();
+        var userId = User.GetUserId() ?? default;
         await duplicateDetectionService.MergeDuplicatePapersAsync(
             request.KeepPaperId,
             request.MergeIntoPaperId,
