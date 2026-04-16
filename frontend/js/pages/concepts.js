@@ -73,7 +73,6 @@ export async function render(container, { navigate }) {
     statsData = await getConceptStatistics();
     renderStats();
   } catch (err) {
-    console.warn('Could not load concept statistics:', err.message);
     toast(`Could not load concept statistics: ${err.message}`, 'warning');
   }
 
