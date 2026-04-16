@@ -137,7 +137,7 @@ public static class ContractMappingExtensions
         new(model.Id, model.PaperId, model.SourceUrl, model.FileName, model.MediaType, model.StoragePath, model.Status.ToString(), model.RequiresOcr, model.ExtractedText, model.Metadata, model.LastError, model.DownloadedAt, model.ExtractedAt, model.CreatedAt, model.UpdatedAt);
 
     public static SummaryDto ToDto(this SummaryModel model) =>
-        new(model.Id, model.PaperId, model.ModelName, model.PromptVersion, model.Status.ToString(), model.Summary, model.ReviewedBy, model.ReviewedAt, model.ReviewNotes, model.CreatedAt, model.UpdatedAt);
+        new(model.Id, model.PaperId, model.ModelName, model.PromptVersion, model.Status.ToString(), model.Summary, model.ReviewedBy, model.ReviewedAt?.DateTime, model.ReviewNotes, model.CreatedAt, model.UpdatedAt);
 
     public static SummaryDiffDto ToDto(this SummaryDiffModel model) =>
         new(
@@ -185,7 +185,7 @@ public static class ContractMappingExtensions
         new(result.NewPapersCount, result.JobId);
 
     public static DuplicatePairResponse ToDto(this DuplicatePairModel model) =>
-        new(model.Id, model.PaperAId, model.PaperATitle, model.PaperBId, model.PaperBTitle, model.SimilarityScore, model.Status.ToString(), model.ReviewedByUserId, model.ReviewedAt, model.Notes, model.CreatedAt);
+        new(model.Id, model.PaperAId, model.PaperATitle, model.PaperBId, model.PaperBTitle, model.SimilarityScore, model.Status.ToString(), model.ReviewedByUserId, model.ReviewedAt?.DateTime, model.Notes, model.CreatedAt);
 
     public static DuplicatesResponse ToDto(this DuplicatesResult result) =>
         new(result.Pairs.Select(p => p.ToDto()).ToList(), result.TotalCount, result.PendingCount);

@@ -1,4 +1,5 @@
 using AutonomousResearchAgent.Api.Authorization;
+using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Api.Contracts.LiteratureReviews;
 using AutonomousResearchAgent.Application.LiteratureReviews;
 using Microsoft.AspNetCore.Authorization;
@@ -15,7 +16,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     [ProducesResponseType(typeof(IReadOnlyList<LiteratureReviewListItemDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<LiteratureReviewListItemDto>>> GetReviews(CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId().GetValueOrDefault();
         var reviews = await literatureReviewService.ListAsync(userId, cancellationToken);
         return Ok(reviews.Select(r => new LiteratureReviewListItemDto(
             r.Id,
@@ -33,7 +34,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<LiteratureReviewDto>> GetReview(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId().GetValueOrDefault();
         var review = await literatureReviewService.GetByIdAsync(id, userId, cancellationToken);
         if (review is null)
         {
@@ -57,7 +58,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<LiteratureReviewDto>> CreateReview([FromBody] CreateLiteratureReviewRequest request, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId().GetValueOrDefault();
         var command = new CreateLiteratureReviewCommand(request.Title, request.ResearchQuestion, request.PaperIds);
         var created = await literatureReviewService.CreateAsync(command, userId, cancellationToken);
         return CreatedAtAction(nameof(GetReview), new { id = created.Id }, new LiteratureReviewDto(
@@ -77,7 +78,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteReview(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId().GetValueOrDefault();
         await literatureReviewService.DeleteAsync(id, userId, cancellationToken);
         return NoContent();
     }
@@ -89,7 +90,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<FileResult>> ExportMarkdown(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId().GetValueOrDefault();
         var review = await literatureReviewService.GetByIdAsync(id, userId, cancellationToken);
         if (review is null)
             return NotFound();
@@ -104,7 +105,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<FileResult>> ExportPdf(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId().GetValueOrDefault();
         var review = await literatureReviewService.GetByIdAsync(id, userId, cancellationToken);
         if (review is null)
             return NotFound();

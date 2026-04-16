@@ -1,3 +1,4 @@
+using System.Security.Authentication;
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Annotations;
 using AutonomousResearchAgent.Api.Extensions;
@@ -18,10 +19,10 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
         Guid paperId,
         CancellationToken cancellationToken = default)
     {
-        var userId = User.GetUserId();
+        var userId = User.GetUserGuid();
         if (userId is null)
             return Unauthorized();
-        var annotations = await annotationService.ListForPaperAsync(paperId, userId.Value, cancellationToken);
+        var annotations = await annotationService.ListForPaperAsync(paperId, userId.GetValueOrDefault(), cancellationToken);
         return Ok(annotations.Select(a => new AnnotationResponse(
             a.Id,
             a.PaperId,
@@ -47,13 +48,13 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
         [FromBody] CreateAnnotationRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = User.GetUserId();
+        var userId = User.GetUserGuid();
         if (userId is null)
             throw new AuthenticationException("User ID not found in token");
 
         var command = new CreateAnnotationCommand(
             paperId,
-            userId.Value,
+            userId.GetValueOrDefault(),
             request.ChunkId,
             request.Page,
             request.OffsetStart,

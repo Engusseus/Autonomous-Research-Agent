@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using AutonomousResearchAgent.Application.Search;
 using AutonomousResearchAgent.Domain.Entities;
 using AutonomousResearchAgent.Domain.Enums;
@@ -91,7 +92,7 @@ public sealed class SearchServiceTests
 
     private static SearchService CreateSearchService(ApplicationDbContext dbContext, IEmbeddingService embeddingService)
     {
-        return new SearchService(dbContext, embeddingService, NullLogger<SearchService>.Instance);
+        return new SearchService(new TestDbContextFactory(dbContext), embeddingService, Options.Create(new SearchWeightsOptions()), NullLogger<SearchService>.Instance);
     }
 
     private static ApplicationDbContext CreateDbContext()

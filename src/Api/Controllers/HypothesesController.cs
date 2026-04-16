@@ -20,7 +20,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
         var userId = User.GetUserId();
         if (userId is null)
             return Unauthorized();
-        var results = await hypothesisService.GetAllByUserAsync(userId.Value, cancellationToken);
+        var results = await hypothesisService.GetAllByUserAsync(userId.GetValueOrDefault(), cancellationToken);
         return Ok(results);
     }
 
@@ -48,7 +48,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
         var command = new CreateHypothesisCommand(
             request.Title,
             request.Description,
-            userId.Value,
+            userId.GetValueOrDefault(),
             request.InitialPapers?.Select(p => new Application.Hypotheses.HypothesisPaperInput(p.PaperId, ParseEvidenceType(p.EvidenceType), p.EvidenceText)).ToList());
         var created = await hypothesisService.CreateAsync(command, cancellationToken);
         return CreatedAtAction(nameof(GetHypothesis), new { id = created.Id }, created);
@@ -67,9 +67,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
         var existing = await hypothesisService.GetByIdAsync(id, cancellationToken);
         if (existing == null)
             return NotFound();
-        if (existing.UserId != userId.Value)
-            return Forbid();
-            return Forbid();
+        if (existing.UserId != userId.GetValueOrDefault()) return Forbid();
         var command = new UpdateHypothesisCommand(request.Title, request.Description);
         var updated = await hypothesisService.UpdateAsync(id, command, cancellationToken);
         return Ok(updated);
@@ -100,8 +98,6 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
         var existing = await hypothesisService.GetByIdAsync(id, cancellationToken);
         if (existing == null)
             return NotFound();
-        if (existing.UserId != userId.Value)
-            return Forbid();
         await hypothesisService.DeleteAsync(id, cancellationToken);
         return NoContent();
     }
