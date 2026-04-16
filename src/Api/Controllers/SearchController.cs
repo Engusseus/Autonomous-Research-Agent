@@ -38,5 +38,14 @@ public sealed class SearchController(ISearchService searchService) : ControllerB
         var result = await searchService.HybridSearchAsync(request.ToApplicationModel(), cancellationToken);
         return Ok(result.ToPagedResponse(item => item.ToDto()));
     }
+
+    [HttpPost("chunks")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(typeof(PagedResponse<ChunkSearchResultDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PagedResponse<ChunkSearchResultDto>>> SearchChunks([FromBody] ChunkSearchRequest request, CancellationToken cancellationToken)
+    {
+        var result = await searchService.SearchDocumentChunksAsync(request.ToApplicationModel(), cancellationToken);
+        return Ok(result.ToPagedResponse(item => item.ToDto()));
+    }
 }
 

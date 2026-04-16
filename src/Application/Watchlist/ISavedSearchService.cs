@@ -1,4 +1,5 @@
 using AutonomousResearchAgent.Application.Common;
+using AutonomousResearchAgent.Domain.Enums;
 
 namespace AutonomousResearchAgent.Application.Watchlist;
 
@@ -18,4 +19,13 @@ public interface INotificationService
     Task<NotificationModel> MarkAsReadAsync(Guid id, CancellationToken cancellationToken);
     Task<int> MarkAllAsReadAsync(int userId, CancellationToken cancellationToken);
     Task<int> GetUnreadCountAsync(int userId, CancellationToken cancellationToken);
+}
+
+public interface IDigestService
+{
+    Task<DigestModel> CreateDigestAsync(CreateDigestCommand command, CancellationToken cancellationToken);
+    Task<DigestModel?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+    Task<IReadOnlyList<DigestModel>> GetDigestsForUserAsync(int userId, DigestFrequency? frequency, CancellationToken cancellationToken);
+    Task<DigestModel?> GetLatestDigestAsync(int userId, DigestFrequency frequency, CancellationToken cancellationToken);
+    Task<string> GenerateDigestContentAsync(int userId, DigestFrequency frequency, CancellationToken cancellationToken);
 }

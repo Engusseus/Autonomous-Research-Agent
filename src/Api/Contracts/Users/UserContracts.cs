@@ -31,3 +31,17 @@ public sealed record UpdateUserRequest(
 
 public sealed record AssignRolesRequest(
     IReadOnlyCollection<string> Roles);
+
+public sealed record CreateApiKeyRequest(
+    string Name,
+    string? Permissions,
+    DateTimeOffset? ExpiresAt);
+
+public sealed record UserApiKeyDto(
+    Guid Id,
+    string Name,
+    string? Permissions,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? ExpiresAt,
+    DateTimeOffset? LastUsedAt,
+    string? RawKey = null);

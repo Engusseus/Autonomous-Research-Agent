@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AutonomousResearchAgent.Application.Analysis;
 using AutonomousResearchAgent.Application.Annotations;
 using AutonomousResearchAgent.Application.Documents;
@@ -87,7 +88,38 @@ internal static class ModelMappingExtensions
             job.CreatedBy,
             job.CreatedAt,
             job.UpdatedAt,
-            job.ParentJobId);
+            job.ParentJobId,
+            job.RetryCount,
+            job.LastAttemptAt,
+            JsonNodeMapper.Deserialize(job.RetryPolicyJson),
+            ParseDependsOnJobIds(job.DependsOnJobIds),
+            job.WorkflowStep);
+
+    private static List<Guid>? ParseDependsOnJobIds(string? dependsOnJobIdsJson)
+    {
+        if (string.IsNullOrWhiteSpace(dependsOnJobIdsJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(dependsOnJobIdsJson ?? "[]");
+            var result = new List<Guid>();
+            foreach (var element in doc.RootElement.EnumerateArray())
+            {
+                if (element.ValueKind == JsonValueKind.String && Guid.TryParse(element.GetString(), out var guid))
+                {
+                    result.Add(guid);
+                }
+            }
+            return result;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     public static AnalysisResultModel ToModel(this AnalysisResult result) =>
         new(

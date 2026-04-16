@@ -3,6 +3,44 @@ using AutonomousResearchAgent.Domain.Enums;
 
 namespace AutonomousResearchAgent.Application.Analysis;
 
+public sealed record PaperComparisonResult(
+    string OverlapSummary,
+    IReadOnlyList<string> ContradictionHints,
+    IReadOnlyList<string> NoveltyHints,
+    IReadOnlyList<string> CommonThemes,
+    string FieldBridgingNotes,
+    JsonObject? ScoringMetadata);
+
+public sealed record ResearchGapResult(
+    IReadOnlyList<string> UnderstudiedAngles,
+    IReadOnlyList<string> ResearchOpportunities,
+    IReadOnlyList<string> SuggestedQueries,
+    JsonObject? CoverageGaps,
+    string? ComparisonSummary);
+
+public sealed record InsightResult(
+    string Theme,
+    IReadOnlyList<string> KeyFindings,
+    IReadOnlyList<string> Evidence,
+    JsonObject? SupportingPapers,
+    double ConfidenceScore);
+
+public sealed record TrendAnalysisResult(
+    string TrendName,
+    IReadOnlyList<string> RelatedPapers,
+    IReadOnlyList<string> Timeline,
+    string Prediction,
+    double Certainty);
+
+public sealed record FieldComparisonResult(
+    string LeftField,
+    string RightField,
+    string OverlapSummary,
+    IReadOnlyList<string> ContradictionHints,
+    IReadOnlyList<string> NoveltyHints,
+    IReadOnlyList<string> CommonThemes,
+    string FieldBridgingNotes);
+
 public sealed record ComparePapersCommand(
     Guid LeftPaperId,
     Guid RightPaperId,
@@ -29,7 +67,27 @@ public sealed record AnalysisResultModel(
     JsonNode? Result,
     string? CreatedBy,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    public PaperComparisonResult? ToPaperComparison() => Result is JsonObject obj
+        ? new PaperComparisonResult(
+            obj["overlapSummary"]?.GetValue<string>() ?? string.Empty,
+            obj["contradictionHints"]?.AsArray().Select(x => x?.GetValue<string>() ?? string.Empty).ToList() ?? [],
+            obj["noveltyHints"]?.AsArray().Select(x => x?.GetValue<string>() ?? string.Empty).ToList() ?? [],
+            obj["commonThemes"]?.AsArray().Select(x => x?.GetValue<string>() ?? string.Empty).ToList() ?? [],
+            obj["fieldBridgingNotes"]?.GetValue<string>() ?? string.Empty,
+            obj["scoringMetadata"] as JsonObject)
+        : null;
+
+    public ResearchGapResult? ToResearchGap() => Result is JsonObject obj
+        ? new ResearchGapResult(
+            obj["understudiedAngles"]?.AsArray().Select(x => x?.GetValue<string>() ?? string.Empty).ToList() ?? [],
+            obj["researchOpportunities"]?.AsArray().Select(x => x?.GetValue<string>() ?? string.Empty).ToList() ?? [],
+            obj["suggestedQueries"]?.AsArray().Select(x => x?.GetValue<string>() ?? string.Empty).ToList() ?? [],
+            obj["coverageGaps"] as JsonObject,
+            obj["comparisonSummary"]?.GetValue<string>())
+        : null;
+}
 
 public sealed record AnalysisJobStatusModel(
     Guid JobId,
@@ -45,4 +103,41 @@ public sealed record ResearchGapReportModel(
     JsonNode? ExternalCoverage,
     JsonNode? SuggestedQueries,
     string? CreatedBy,
+    DateTimeOffset CreatedAt)
+{
+    public ResearchGapResult? ToResearchGapResult() => GapAnalysis is JsonObject obj
+        ? new ResearchGapResult(
+            obj["understudiedAngles"]?.AsArray().Select(x => x?.GetValue<string>() ?? string.Empty).ToList() ?? [],
+            obj["researchOpportunities"]?.AsArray().Select(x => x?.GetValue<string>() ?? string.Empty).ToList() ?? [],
+            obj["suggestedQueries"]?.AsArray().Select(x => x?.GetValue<string>() ?? string.Empty).ToList() ?? [],
+            obj["coverageGaps"] as JsonObject,
+            obj["comparisonSummary"]?.GetValue<string>())
+        : null;
+}
+
+public sealed record ChunkCitation(
+    Guid PaperId,
+    Guid ChunkId,
+    string ChunkText,
+    double Score,
+    int Position,
+    string? PaperTitle = null)
+{
+    public string ToCitationString() => $"[source:{ChunkId}:{PaperId}]";
+}
+
+public sealed record DigestModel(
+    Guid Id,
+    int UserId,
+    DigestFrequency Frequency,
+    string Topic,
+    string Content,
+    int NewPapersCount,
     DateTimeOffset CreatedAt);
+
+public sealed record CreateDigestCommand(
+    int UserId,
+    DigestFrequency Frequency,
+    string Topic,
+    string Content,
+    int NewPapersCount);

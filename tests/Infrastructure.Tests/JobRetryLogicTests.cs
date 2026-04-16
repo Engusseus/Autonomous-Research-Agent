@@ -4,6 +4,7 @@ using AutonomousResearchAgent.Domain.Entities;
 using AutonomousResearchAgent.Domain.Enums;
 using AutonomousResearchAgent.Infrastructure.Persistence;
 using AutonomousResearchAgent.Infrastructure.Services;
+using AutonomousResearchAgent.Workers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -35,6 +36,7 @@ public sealed class JobRetryLogicTests
         Assert.Equal(JobStatus.Queued, result.Status);
         Assert.Null(result.ErrorMessage);
         Assert.Null(result.Result);
+        Assert.Equal(0, result.RetryCount);
     }
 
     [Fact]
@@ -190,6 +192,31 @@ public sealed class JobRetryLogicTests
     }
 
     [Fact]
+    public async Task RetryAsync_clears_retry_count_and_retry_policy()
+    {
+        await using var dbContext = CreateDbContext();
+        var job = new Job
+        {
+            Type = JobType.ImportPapers,
+            Status = JobStatus.Failed,
+            PayloadJson = "{}",
+            RetryCount = 3,
+            RetryPolicyJson = "{\"attemptNumber\":3}",
+            LastAttemptAt = DateTimeOffset.UtcNow.AddMinutes(-5)
+        };
+        dbContext.Jobs.Add(job);
+        await dbContext.SaveChangesAsync();
+
+        var service = CreateJobService(dbContext);
+
+        var result = await service.RetryAsync(job.Id, new RetryJobCommand(null, null), CancellationToken.None);
+
+        Assert.Equal(0, result.RetryCount);
+        Assert.Null(result.RetryPolicy);
+        Assert.Null(result.LastAttemptAt);
+    }
+
+    [Fact]
     public async Task RetryAsync_logs_information()
     {
         await using var dbContext = CreateDbContext();
@@ -215,6 +242,196 @@ public sealed class JobRetryLogicTests
                 null,
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
+    }
+
+    [Fact]
+    public void JobRetryPolicy_GetDelayForAttempt_returns_exponential_backoff()
+    {
+        var policy = new JobRetryPolicy();
+
+        var delay0 = policy.GetDelayForAttempt(0);
+        var delay1 = policy.GetDelayForAttempt(1);
+        var delay2 = policy.GetDelayForAttempt(2);
+        var delay3 = policy.GetDelayForAttempt(3);
+        var delay4 = policy.GetDelayForAttempt(4);
+
+        Assert.Equal(TimeSpan.FromSeconds(30), delay0);
+        Assert.Equal(TimeSpan.FromSeconds(60), delay1);
+        Assert.Equal(TimeSpan.FromSeconds(120), delay2);
+        Assert.Equal(TimeSpan.FromSeconds(240), delay3);
+        Assert.Equal(TimeSpan.FromSeconds(480), delay4);
+    }
+
+    [Fact]
+    public void JobRetryPolicy_GetDelayForAttempt_respects_max_delay()
+    {
+        var policy = new JobRetryPolicy();
+
+        var delay10 = policy.GetDelayForAttempt(10);
+
+        Assert.Equal(TimeSpan.FromHours(1), delay10);
+    }
+
+    [Fact]
+    public void JobRetryPolicy_ShouldRetry_returns_false_after_max_attempts()
+    {
+        var policy = new JobRetryPolicy();
+
+        var result = policy.ShouldRetry(5, new HttpRequestException("Test"));
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void JobRetryPolicy_ShouldRetry_returns_true_for_rate_limit()
+    {
+        var policy = new JobRetryPolicy();
+
+        var result = policy.ShouldRetry(1, new HttpRequestException("Rate limit")
+        {
+            StatusCode = System.Net.HttpStatusCode.TooManyRequests
+        });
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void JobRetryPolicy_ShouldRetry_returns_true_for_service_unavailable()
+    {
+        var policy = new JobRetryPolicy();
+
+        var result = policy.ShouldRetry(1, new HttpRequestException("Service unavailable")
+        {
+            StatusCode = System.Net.HttpStatusCode.ServiceUnavailable
+        });
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void JobRetryPolicy_ShouldRetry_returns_false_for_operation_cancelled()
+    {
+        var policy = new JobRetryPolicy();
+
+        var result = policy.ShouldRetry(1, new OperationCanceledException());
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void JobRetryPolicy_IsRateLimitException_detects_429()
+    {
+        var policy = new JobRetryPolicy();
+
+        var exception = new HttpRequestException("Rate limit")
+        {
+            StatusCode = System.Net.HttpStatusCode.TooManyRequests
+        };
+
+        Assert.True(policy.IsRateLimitException(exception));
+    }
+
+    [Fact]
+    public void JobRetryPolicy_IsServiceUnavailableException_detects_503()
+    {
+        var policy = new JobRetryPolicy();
+
+        var exception = new HttpRequestException("Service unavailable")
+        {
+            StatusCode = System.Net.HttpStatusCode.ServiceUnavailable
+        };
+
+        Assert.True(policy.IsServiceUnavailableException(exception));
+    }
+
+    [Fact]
+    public void JobRetryPolicy_IsNetworkError_detects_network_exceptions()
+    {
+        var policy = new JobRetryPolicy();
+
+        Assert.True(policy.IsNetworkError(new HttpRequestException("Network error")));
+        Assert.True(policy.IsNetworkError(new TaskCanceledException()));
+    }
+
+    [Fact]
+    public void JobRetryPolicy_CreateRetryPolicyData_creates_valid_data()
+    {
+        var policy = new JobRetryPolicy();
+        var exception = new HttpRequestException("Rate limit")
+        {
+            StatusCode = System.Net.HttpStatusCode.TooManyRequests
+        };
+        var delay = TimeSpan.FromSeconds(60);
+
+        var result = policy.CreateRetryPolicyData(1, exception, delay);
+
+        Assert.Equal(1, result.AttemptNumber);
+        Assert.Equal("HttpRequestException", result.ExceptionType);
+        Assert.Equal("Rate limit", result.ExceptionMessage);
+        Assert.Equal(60, result.DelaySeconds);
+        Assert.True(result.ShouldRetry);
+        Assert.Contains("429", result.Reason);
+    }
+
+    [Fact]
+    public async Task UpdateRetryStatusAsync_updates_retry_fields()
+    {
+        await using var dbContext = CreateDbContext();
+        var job = new Job
+        {
+            Type = JobType.ImportPapers,
+            Status = JobStatus.Queued,
+            PayloadJson = "{}"
+        };
+        dbContext.Jobs.Add(job);
+        await dbContext.SaveChangesAsync();
+
+        var service = CreateJobService(dbContext);
+        var retryPolicyJson = "{\"attemptNumber\":1,\"delaySeconds\":30}";
+
+        var result = await service.UpdateRetryStatusAsync(job.Id, 1, retryPolicyJson, CancellationToken.None);
+
+        Assert.Equal(1, result.RetryCount);
+        Assert.NotNull(result.RetryPolicy);
+        Assert.NotNull(result.LastAttemptAt);
+    }
+
+    [Fact]
+    public async Task GetJobsByParentIdAsync_returns_child_jobs()
+    {
+        await using var dbContext = CreateDbContext();
+        var parentJob = new Job
+        {
+            Type = JobType.ResearchGoal,
+            Status = JobStatus.Running,
+            PayloadJson = "{}"
+        };
+        var childJob1 = new Job
+        {
+            Type = JobType.SearchPapers,
+            Status = JobStatus.Completed,
+            PayloadJson = "{}",
+            ParentJobId = parentJob.Id,
+            WorkflowStep = 1
+        };
+        var childJob2 = new Job
+        {
+            Type = JobType.ImportPapers,
+            Status = JobStatus.Queued,
+            PayloadJson = "{}",
+            ParentJobId = parentJob.Id,
+            WorkflowStep = 2
+        };
+        dbContext.Jobs.AddRange(parentJob, childJob1, childJob2);
+        await dbContext.SaveChangesAsync();
+
+        var service = CreateJobService(dbContext);
+
+        var result = await service.GetJobsByParentIdAsync(parentJob.Id, CancellationToken.None);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(1, result[0].WorkflowStep);
+        Assert.Equal(2, result[1].WorkflowStep);
     }
 
     private static ApplicationDbContext CreateDbContext()

@@ -1,5 +1,6 @@
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.Webhooks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -87,7 +88,11 @@ public sealed class WebhooksController(IWebhookService webhookService) : Control
         return NoContent();
     }
 
-    private int? GetUserId() => User.GetUserId();
+    private int GetUserId()
+    {
+        var userId = User.GetUserId();
+        return userId ?? throw new AuthenticationException("User ID not found in token.");
+    }
 }
 
 public sealed record WebhookResponse(

@@ -1,3 +1,4 @@
+using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.Search;
 using AutonomousResearchAgent.Domain.Entities;
 using AutonomousResearchAgent.Domain.Enums;
@@ -5,12 +6,22 @@ using AutonomousResearchAgent.Infrastructure.Persistence;
 using AutonomousResearchAgent.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Infrastructure.Tests;
 
 public sealed class SearchServiceTests
 {
+    private static readonly IOptions<SearchWeightsOptions> DefaultSearchWeights = Options.Create(new SearchWeightsOptions
+    {
+        Title = 1.0,
+        Abstract = 0.6,
+        Summary = 0.4,
+        Document = 0.5,
+        RrfConstantK = 60
+    });
+
     [Fact]
     public async Task SemanticSearchAsync_ranks_papers_using_best_embedding_across_abstract_and_summary_vectors()
     {
@@ -44,7 +55,7 @@ public sealed class SearchServiceTests
     }
 
     [Fact]
-    public async Task HybridSearchAsync_blends_keyword_and_semantic_scores_into_one_result_per_paper()
+    public async Task HybridSearchAsync_uses_rrf_to_fuse_keyword_and_semantic_rankings()
     {
         await using var dbContext = CreateDbContext();
         var queryEmbeddingService = new FakeEmbeddingService(new[] { 1f, 0f });
@@ -75,23 +86,123 @@ public sealed class SearchServiceTests
 
         Assert.Equal(2, result.TotalCount);
         Assert.Equal(2, result.Items.Count);
-        Assert.Equal(semanticOnlyPaper.Id, result.Items.First().PaperId);
-        Assert.Equal("hybrid", result.Items.First().MatchType);
-        Assert.Equal(0.75, result.Items.First().Score, 5);
 
-        var blended = result.Items.Last();
-        Assert.Equal(keywordAndSemanticPaper.Id, blended.PaperId);
-        Assert.Equal("hybrid", blended.MatchType);
-        Assert.Equal(0.39997, blended.Score, 5);
+        var topResult = result.Items.First();
+        var secondResult = result.Items.Last();
 
-        var highlights = Assert.IsType<System.Text.Json.Nodes.JsonObject>(blended.Highlights);
-        Assert.Equal(1.0, highlights["keywordScore"]!.GetValue<double>(), 5);
-        Assert.Equal(0.19996, highlights["semanticScore"]!.GetValue<double>(), 5);
+        Assert.Equal("hybrid", topResult.MatchType);
+        Assert.Equal("hybrid", secondResult.MatchType);
+
+        var topHighlights = Assert.IsType<System.Text.Json.Nodes.JsonObject>(topResult.Highlights);
+        var secondHighlights = Assert.IsType<System.Text.Json.Nodes.JsonObject>(secondResult.Highlights);
+
+        Assert.NotNull(topHighlights["keywordRrfScore"]);
+        Assert.NotNull(topHighlights["semanticRrfScore"]);
+        Assert.NotNull(secondHighlights["keywordRrfScore"]);
+        Assert.NotNull(secondHighlights["semanticRrfScore"]);
+    }
+
+    [Fact]
+    public async Task HybridSearchAsync_with_ranked_results_computes_rrf_scores_correctly()
+    {
+        await using var dbContext = CreateDbContext();
+        var queryEmbeddingService = new FakeEmbeddingService(new[] { 1f, 0f });
+        var service = CreateSearchService(dbContext, queryEmbeddingService);
+
+        var rank1Paper = CreatePaper("First paper", abstractEmbedding: new[] { 1f, 0f });
+        var rank2Paper = CreatePaper("Second paper", abstractEmbedding: new[] { 0.9f, 0.1f });
+        var rank3Paper = CreatePaper("Third paper", abstractEmbedding: new[] { 0.8f, 0.2f });
+
+        dbContext.Papers.AddRange(rank1Paper, rank2Paper, rank3Paper);
+        await dbContext.SaveChangesAsync();
+
+        var result = await service.HybridSearchAsync(
+            new HybridSearchRequestModel(
+                Query: "test",
+                PageNumber: 1,
+                PageSize: 10,
+                MaxCandidates: 10),
+            CancellationToken.None);
+
+        Assert.Equal(3, result.TotalCount);
+
+        var topHighlights = Assert.IsType<System.Text.Json.Nodes.JsonObject>(result.Items.First().Highlights);
+        var secondHighlights = Assert.IsType<System.Text.Json.Nodes.JsonObject>(result.Items[1].Highlights);
+
+        var topKeywordRrf = topHighlights["keywordRrfScore"]?.GetValue<double>() ?? 0;
+        var secondKeywordRrf = secondHighlights["keywordRrfScore"]?.GetValue<double>() ?? 0;
+
+        Assert.True(topKeywordRrf > secondKeywordRrf);
+    }
+
+    [Fact]
+    public async Task SearchDocumentChunksAsync_returns_chunk_results()
+    {
+        await using var dbContext = CreateDbContext();
+        var queryEmbeddingService = new FakeEmbeddingService(new[] { 1f, 0f });
+        var service = CreateSearchService(dbContext, queryEmbeddingService);
+
+        var paper = new Paper
+        {
+            Id = Guid.NewGuid(),
+            Title = "Test Paper",
+            Abstract = "Test abstract",
+            Authors = ["Author"],
+            Year = 2025
+        };
+
+        var document = new PaperDocument
+        {
+            Id = Guid.NewGuid(),
+            PaperId = paper.Id,
+            ExtractedText = "Some document text"
+        };
+
+        var chunk = new DocumentChunk
+        {
+            Id = Guid.NewGuid(),
+            PaperDocumentId = document.Id,
+            Text = "Chunk text content",
+            ChunkIndex = 0,
+            TextLength = 18,
+            StartPosition = 0,
+            EndPosition = 18
+        };
+
+        var chunkEmbedding = new PaperEmbedding
+        {
+            Id = Guid.NewGuid(),
+            PaperId = paper.Id,
+            DocumentChunkId = chunk.Id,
+            EmbeddingType = EmbeddingType.DocumentChunk,
+            Vector = new[] { 1f, 0f },
+            ModelName = "test-model",
+            VectorDimensions = 2
+        };
+
+        dbContext.Papers.Add(paper);
+        dbContext.PaperDocuments.Add(document);
+        dbContext.DocumentChunks.Add(chunk);
+        dbContext.PaperEmbeddings.Add(chunkEmbedding);
+        await dbContext.SaveChangesAsync();
+
+        var result = await service.SearchDocumentChunksAsync(
+            new ChunkSearchRequestModel("chunk query", PageNumber: 1, PageSize: 10, MaxCandidates: 10),
+            CancellationToken.None);
+
+        Assert.Single(result.Items);
+        Assert.Equal(chunk.Id, result.Items.First().ChunkId);
+        Assert.Equal("Chunk text content", result.Items.First().ChunkText);
+        Assert.Equal(paper.Id, result.Items.First().PaperId);
     }
 
     private static SearchService CreateSearchService(ApplicationDbContext dbContext, IEmbeddingService embeddingService)
     {
-        return new SearchService(dbContext, embeddingService, NullLogger<SearchService>.Instance);
+        return new SearchService(
+            new TestDbContextFactory(dbContext),
+            embeddingService,
+            DefaultSearchWeights,
+            NullLogger<SearchService>.Instance);
     }
 
     private static ApplicationDbContext CreateDbContext()
@@ -101,6 +212,13 @@ public sealed class SearchServiceTests
             .Options;
 
         return new ApplicationDbContext(options);
+    }
+
+    private sealed class TestDbContextFactory(ApplicationDbContext context) : IDbContextFactory<ApplicationDbContext>
+    {
+        public ApplicationDbContext CreateDbContext() => context;
+        public Task<ApplicationDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(context);
     }
 
     private static Paper CreatePaper(
@@ -125,7 +243,8 @@ public sealed class SearchServiceTests
             Paper = paper,
             EmbeddingType = EmbeddingType.PaperAbstract,
             Vector = abstractEmbedding,
-            ModelName = "test-model"
+            ModelName = "test-model",
+            VectorDimensions = abstractEmbedding.Length
         });
 
         if (summaryEmbedding is not null)
@@ -145,7 +264,8 @@ public sealed class SearchServiceTests
                 Summary = summary,
                 EmbeddingType = EmbeddingType.Summary,
                 Vector = summaryEmbedding,
-                ModelName = "test-model"
+                ModelName = "test-model",
+                VectorDimensions = summaryEmbedding.Length
             });
         }
 

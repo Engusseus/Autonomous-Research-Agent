@@ -9,4 +9,5 @@ public sealed class LocalEmbeddingOptions
     public string ModelName { get; set; } = "Snowflake/snowflake-arctic-embed-m-v1.5";
     public int TimeoutSeconds { get; set; } = 60;
     public int VectorDimensions { get; set; } = 768;
+    public bool AllowVariableDimensions { get; set; } = false;
 }

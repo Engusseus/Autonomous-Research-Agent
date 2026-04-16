@@ -1,3 +1,4 @@
+using System.Text;
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Analysis;
 using AutonomousResearchAgent.Api.Extensions;
@@ -10,7 +11,7 @@ namespace AutonomousResearchAgent.Api.Controllers;
 
 [ApiController]
 [Route($"{ApiConstants.ApiPrefix}/analysis")]
-public sealed class AnalysisController(IAnalysisService analysisService) : ControllerBase
+public sealed class AnalysisController(IAnalysisService analysisService, ILogger<AnalysisController> logger) : ControllerBase
 {
     [HttpPost("compare-papers")]
     [Authorize(Policy = PolicyNames.ReadAccess)]
@@ -68,5 +69,54 @@ public sealed class AnalysisController(IAnalysisService analysisService) : Contr
     {
         await analysisService.DeleteAsync(analysisResultId, cancellationToken);
         return NoContent();
+    }
+
+    [HttpPost("research-gap")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [EnableRateLimiting(RateLimiterPolicyNames.Expensive)]
+    [ProducesResponseType(typeof(ResearchGapReportDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ResearchGapReportDto>> IdentifyResearchGap([FromBody] IdentifyResearchGapRequest request, CancellationToken cancellationToken)
+    {
+        var result = await analysisService.IdentifyResearchGapAsync(new IdentifyResearchGapCommand(request.Topic, User.GetActorName()), cancellationToken);
+        return Ok(result.ToDto());
+    }
+
+    [HttpGet("research-gap/{reportId:guid}/stream")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task StreamResearchGapReport(Guid reportId, CancellationToken cancellationToken)
+    {
+        Response.ContentType = "text/event-stream";
+        Response.StatusCode = 200;
+
+        try
+        {
+            var result = await analysisService.IdentifyResearchGapAsync(
+                new IdentifyResearchGapCommand(reportId.ToString(), User.GetActorName()), cancellationToken);
+
+            var reportText = result.GapAnalysis?.ToJsonString() ?? "Report not available.";
+
+            var words = reportText.Split(' ');
+            foreach (var word in words)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+                var bytes = Encoding.UTF8.GetBytes($"data: {word} ");
+                await Response.Body.WriteAsync(bytes, cancellationToken);
+                await Response.Body.FlushAsync(cancellationToken);
+                await Task.Delay(15, cancellationToken);
+            }
+
+            var endBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
+            await Response.Body.WriteAsync(endBytes, cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error streaming research gap report");
+            if (!Response.HasStarted)
+            {
+                Response.StatusCode = 500;
+            }
+        }
     }
 }

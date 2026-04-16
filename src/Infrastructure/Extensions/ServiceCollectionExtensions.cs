@@ -1,6 +1,7 @@
 using AutonomousResearchAgent.Application.Admin;
 using AutonomousResearchAgent.Application.Analysis;
 using AutonomousResearchAgent.Application.Auth;
+using AutonomousResearchAgent.Application.Cache;
 using AutonomousResearchAgent.Application.Citations;
 using AutonomousResearchAgent.Application.Chat;
 using AutonomousResearchAgent.Application.Collections;
@@ -20,11 +21,13 @@ using AutonomousResearchAgent.Infrastructure.External.OpenRouter;
 using AutonomousResearchAgent.Infrastructure.External.SemanticScholar;
 using AutonomousResearchAgent.Infrastructure.Persistence;
 using AutonomousResearchAgent.Infrastructure.Services;
+using AutonomousResearchAgent.Infrastructure.Services.Summaries;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Pgvector.EntityFrameworkCore;
+using StackExchange.Redis;
 
 namespace AutonomousResearchAgent.Infrastructure.Extensions;
 
@@ -51,12 +54,25 @@ public static class ServiceCollectionExtensions
         services.Configure<LocalEmbeddingOptions>(configuration.GetSection(LocalEmbeddingOptions.SectionName));
         services.Configure<SearchWeightsOptions>(configuration.GetSection(SearchWeightsOptions.SectionName));
         services.Configure<SummaryOptions>(configuration.GetSection(SummaryOptions.SectionName));
+        services.Configure<CacheOptions>(configuration.GetSection("CacheOptions"));
 
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions => npgsqlOptions.UseVector()));
 
         services.AddDbContextFactory<ApplicationDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions => npgsqlOptions.UseVector()));
+
+        var redisConnectionString = configuration.GetConnectionString("Redis");
+        if (!string.IsNullOrWhiteSpace(redisConnectionString))
+        {
+            services.AddSingleton<IConnectionMultiplexer>(sp =>
+                ConnectionMultiplexer.Connect(redisConnectionString));
+            services.AddScoped<ICacheService, RedisCacheService>();
+        }
+        else
+        {
+            services.AddSingleton<ICacheService, InMemoryCacheService>();
+        }
 
         services.AddScoped<IPaperService, PaperService>();
         services.AddScoped<IPaperDocumentService, PaperDocumentService>();
@@ -83,7 +99,19 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IAnalyticsService, AnalyticsService>();
         services.AddSingleton<ITokenService, TokenService>();
+        services.AddScoped<IPromptVersionService, PromptVersionService>();
         services.AddHostedService<DatabaseJobWorker>();
+
+        services.Configure<VisionPdfExtractorOptions>(configuration.GetSection(VisionPdfExtractorOptions.SectionName));
+        services.PostConfigure<VisionPdfExtractorOptions>(options =>
+        {
+            if (string.IsNullOrWhiteSpace(options.VisionApiKey))
+            {
+                options.VisionApiKey = Environment.GetEnvironmentVariable("VISION_API_KEY");
+            }
+        });
+        services.AddHttpClient<VisionPdfExtractor>();
+        services.AddScoped<VisionPdfExtractor>();
 
         services.AddHttpClient<ISemanticScholarClient, SemanticScholarClient>((serviceProvider, client) =>
         {
@@ -119,5 +147,97 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient("Webhooks");
 
         return services;
+    }
+}
+
+internal sealed class InMemoryCacheService : ICacheService
+{
+    private readonly Dictionary<string, (string Value, DateTimeOffset? Expiry)> _cache = new();
+    private readonly object _lock = new();
+
+    public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
+    {
+        lock (_lock)
+        {
+            if (_cache.TryGetValue(key, out var entry))
+            {
+                if (entry.Expiry == null || entry.Expiry > DateTimeOffset.UtcNow)
+                {
+                    return Task.FromResult<T?>(System.Text.Json.JsonSerializer.Deserialize<T>(entry.Value));
+                }
+                _cache.Remove(key);
+            }
+        }
+        return Task.FromResult<T?>(null);
+    }
+
+    public Task<bool> SetAsync<T>(string key, T value, TimeSpan? ttl = null, CancellationToken cancellationToken = default) where T : class
+    {
+        var serialized = System.Text.Json.JsonSerializer.Serialize(value);
+        return SetAsync(key, serialized, ttl, cancellationToken);
+    }
+
+    public Task<bool> SetAsync(string key, string value, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            var expiry = ttl.HasValue ? DateTimeOffset.UtcNow.Add(ttl.Value) : (DateTimeOffset?)null;
+            _cache[key] = (value, expiry);
+        }
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            return Task.FromResult(_cache.Remove(key));
+        }
+    }
+
+    public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            if (_cache.TryGetValue(key, out var entry))
+            {
+                if (entry.Expiry == null || entry.Expiry > DateTimeOffset.UtcNow)
+                {
+                    return Task.FromResult(true);
+                }
+                _cache.Remove(key);
+            }
+        }
+        return Task.FromResult(false);
+    }
+
+    public Task<bool> SetExpirationAsync(string key, TimeSpan ttl, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            if (_cache.TryGetValue(key, out var entry))
+            {
+                _cache[key] = (entry.Value, DateTimeOffset.UtcNow.Add(ttl));
+                return Task.FromResult(true);
+            }
+        }
+        return Task.FromResult(false);
+    }
+
+    public async Task<T?> GetOrSetAsync<T>(string key, Func<Task<T>> factory, TimeSpan? ttl = null, CancellationToken cancellationToken = default) where T : class
+    {
+        var cached = await GetAsync<T>(key, cancellationToken);
+        if (cached != null)
+        {
+            return cached;
+        }
+
+        var value = await factory();
+        if (value != null)
+        {
+            await SetAsync(key, value, ttl, cancellationToken);
+        }
+
+        return value;
     }
 }

@@ -55,7 +55,11 @@ public sealed class JobService(
             PayloadJson = JsonNodeMapper.Serialize(command.Payload) ?? "{}",
             TargetEntityId = command.TargetEntityId,
             CreatedBy = command.CreatedBy,
-            ParentJobId = command.ParentJobId
+            ParentJobId = command.ParentJobId,
+            DependsOnJobIds = command.DependsOnJobIds != null
+                ? System.Text.Json.JsonSerializer.Serialize(command.DependsOnJobIds)
+                : null,
+            WorkflowStep = command.WorkflowStep
         };
 
         dbContext.Jobs.Add(entity);
@@ -78,11 +82,27 @@ public sealed class JobService(
         entity.Status = JobStatus.Queued;
         entity.ErrorMessage = null;
         entity.ResultJson = null;
+        entity.RetryCount = 0;
+        entity.RetryPolicyJson = null;
+        entity.LastAttemptAt = null;
         entity.CreatedBy = command.RequestedBy ?? entity.CreatedBy;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Retried job {JobId}", entity.Id);
 
+        return entity.ToModel();
+    }
+
+    public async Task<JobModel> UpdateRetryStatusAsync(Guid id, int retryCount, string retryPolicyJson, CancellationToken cancellationToken)
+    {
+        var entity = await dbContext.Jobs.FirstOrDefaultAsync(j => j.Id == id, cancellationToken)
+            ?? throw new NotFoundException(nameof(Job), id);
+
+        entity.RetryCount = retryCount;
+        entity.RetryPolicyJson = retryPolicyJson;
+        entity.LastAttemptAt = DateTimeOffset.UtcNow;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
         return entity.ToModel();
     }
 
@@ -94,5 +114,32 @@ public sealed class JobService(
         dbContext.Jobs.Remove(entity);
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Deleted job {JobId}", id);
+    }
+
+    public async Task<List<JobModel>> GetJobsByParentIdAsync(Guid parentId, CancellationToken cancellationToken)
+    {
+        var entities = await dbContext.Jobs
+            .AsNoTracking()
+            .Where(j => j.ParentJobId == parentId)
+            .OrderBy(j => j.WorkflowStep)
+            .ThenBy(j => j.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return entities.Select(j => j.ToModel()).ToList();
+    }
+
+    public async Task<JobModel> UpdateStatusAsync(Guid id, JobStatus status, string? errorMessage, CancellationToken cancellationToken)
+    {
+        var entity = await dbContext.Jobs.FirstOrDefaultAsync(j => j.Id == id, cancellationToken)
+            ?? throw new NotFoundException(nameof(Job), id);
+
+        entity.Status = status;
+        if (errorMessage != null)
+        {
+            entity.ErrorMessage = errorMessage;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return entity.ToModel();
     }
 }

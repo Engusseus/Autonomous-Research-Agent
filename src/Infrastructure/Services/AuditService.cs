@@ -47,4 +47,29 @@ public sealed class AuditService(DbContext dbContext) : IAuditService
 
         return new PagedAuditResult(models, query.PageNumber, query.PageSize, totalCount);
     }
+
+    public async Task LogAuditEventAsync(AuditLogCommand command, CancellationToken cancellationToken)
+    {
+        var auditEvent = new AuditEvent
+        {
+            UserId = command.UserId,
+            Action = command.Action,
+            EntityType = command.EntityType,
+            EntityId = command.EntityId,
+            DiffJson = BuildDiffJson(command.OldValues, command.NewValues),
+            Timestamp = command.Timestamp,
+            IpAddress = command.IpAddress
+        };
+
+        dbContext.Set<AuditEvent>().Add(auditEvent);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string? BuildDiffJson(string? oldValues, string? newValues)
+    {
+        if (string.IsNullOrWhiteSpace(oldValues) && string.IsNullOrWhiteSpace(newValues))
+            return null;
+
+        return System.Text.Json.JsonSerializer.Serialize(new { Old = oldValues, New = newValues });
+    }
 }

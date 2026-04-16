@@ -1,5 +1,7 @@
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.LiteratureReviews;
+using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.LiteratureReviews;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -112,5 +114,9 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
         return File(pdfBytes, "application/pdf", $"literature_review_{id}.pdf");
     }
 
-    private int? GetUserId() => User.GetUserId();
+    private int GetUserId()
+    {
+        var userId = User.GetUserId();
+        return userId ?? throw new AuthenticationException("User ID not found in token.");
+    }
 }

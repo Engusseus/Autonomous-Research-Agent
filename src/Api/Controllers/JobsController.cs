@@ -97,4 +97,13 @@ public sealed class JobsController(IJobService jobService) : ControllerBase
         await jobService.DeleteAsync(id, cancellationToken);
         return NoContent();
     }
+
+    [HttpGet("parent/{parentId:guid}")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(typeof(List<JobDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<JobDto>>> GetJobsByParentId(Guid parentId, CancellationToken cancellationToken)
+    {
+        var jobs = await jobService.GetJobsByParentIdAsync(parentId, cancellationToken);
+        return Ok(jobs.Select(j => j.ToDto()).ToList());
+    }
 }

@@ -102,7 +102,11 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
         return NoContent();
     }
 
-    private int? GetUserId() => User.GetUserId();
+    private int GetUserId()
+    {
+        var userId = User.GetUserId();
+        return userId ?? throw new AuthenticationException("User ID not found in token.");
+    }
 
     private static ReadingSessionResponse MapToResponse(ReadingSessionModel model) =>
         new(

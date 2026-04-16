@@ -3,7 +3,7 @@ import {
   toast, emptyState
 } from '../components.js';
 
-export function renderAnnotationSidebar(container, { paperId, annotations, onCreate, onUpdate, onDelete }) {
+export function renderAnnotationSidebar(container, { paperId, annotations, hypotheses = [], onCreate, onUpdate, onDelete }) {
   clear(container);
 
   const wrapper = h('div', { className: 'annotation-sidebar' });
@@ -13,6 +13,22 @@ export function renderAnnotationSidebar(container, { paperId, annotations, onCre
       h('h2', { className: 'section-title' }, `Annotations (${annotations.length})`),
     )
   );
+
+  if (hypotheses.length > 0) {
+    const hypothesisSection = h('div', { className: 'hypothesis-links-section', style: 'margin-bottom: var(--s-6); padding: var(--s-4); background: var(--c-bg); border-radius: var(--radius);' });
+    hypothesisSection.appendChild(
+      h('h3', { style: 'font-size: 14px; color: var(--c-text-secondary); margin-bottom: var(--s-3);' }, 'LINKED HYPOTHESES')
+    );
+    for (const hyp of hypotheses) {
+      hypothesisSection.appendChild(
+        h('div', { className: 'hypothesis-link-item', style: 'padding: var(--s-2) 0; border-bottom: 1px solid var(--c-border);' },
+          h('span', { style: 'font-weight: 500;' }, hyp.title || hyp.id),
+          hyp.status ? h('span', { style: 'margin-left: 8px; font-size: 12px; color: var(--c-text-secondary);' }, `(${hyp.status})`) : null
+        )
+      );
+    }
+    wrapper.appendChild(hypothesisSection);
+  }
 
   if (annotations.length === 0) {
     wrapper.appendChild(emptyState('No annotations', 'Highlight text to create an annotation'));

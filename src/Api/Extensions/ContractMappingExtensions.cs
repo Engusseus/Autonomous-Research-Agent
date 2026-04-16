@@ -154,8 +154,30 @@ public static class ContractMappingExtensions
     public static SearchResultDto ToDto(this SearchResultModel model) =>
         new(model.PaperId, model.Title, model.Abstract, model.Authors, model.Year, model.Venue, model.Score, model.MatchType, model.Highlights);
 
+    public static ChunkSearchRequestModel ToApplicationModel(this ChunkSearchRequest request) =>
+        new(request.Query, request.PageNumber, request.PageSize, request.MaxCandidates);
+
+    public static ChunkSearchResultDto ToDto(this ChunkSearchResultModel model) =>
+        new(model.ChunkId, model.PaperId, model.PaperTitle, model.ChunkText, model.Score);
+
     public static JobDto ToDto(this JobModel model) =>
-        new(model.Id, model.Type.ToString(), model.Status.ToString(), model.Payload, model.Result, model.ErrorMessage, model.TargetEntityId, model.CreatedBy, model.CreatedAt, model.UpdatedAt);
+        new(
+            model.Id,
+            model.Type.ToString(),
+            model.Status.ToString(),
+            model.Payload,
+            model.Result,
+            model.ErrorMessage,
+            model.TargetEntityId,
+            model.CreatedBy,
+            model.CreatedAt,
+            model.UpdatedAt,
+            model.ParentJobId,
+            model.RetryCount,
+            model.LastAttemptAt,
+            model.RetryPolicy,
+            model.DependsOnJobIds,
+            model.WorkflowStep);
 
     public static AnalysisResultDto ToDto(this AnalysisResultModel model) =>
         new(model.Id, model.JobId, model.AnalysisType.ToString(), model.InputSet, model.Result, model.CreatedBy, model.CreatedAt, model.UpdatedAt);
@@ -184,8 +206,14 @@ public static class ContractMappingExtensions
     public static RunSavedSearchResponse ToDto(this RunSavedSearchResult result) =>
         new(result.NewPapersCount, result.JobId);
 
+    public static DigestDto ToDto(this AutonomousResearchAgent.Application.Watchlist.DigestModel model) =>
+        new(model.Id, model.UserId, model.Frequency.ToString(), model.Topic, model.Content, model.NewPapersCount, model.CreatedAt);
+
+    public static ResearchGapReportDto ToDto(this ResearchGapReportModel model) =>
+        new(model.Id, model.Topic, model.GapAnalysis, model.CorpusCoverage, model.ExternalCoverage, model.SuggestedQueries, model.CreatedBy, model.CreatedAt);
+
     public static DuplicatePairResponse ToDto(this DuplicatePairModel model) =>
-        new(model.Id, model.PaperAId, model.PaperATitle, model.PaperBId, model.PaperBTitle, model.SimilarityScore, model.Status.ToString(), model.ReviewedByUserId, model.ReviewedAt, model.Notes, model.CreatedAt);
+        new(model.Id, model.PaperAId, model.PaperATitle, model.PaperBId, model.PaperBTitle, model.SimilarityScore, model.Status.ToString(), model.ReviewedByUserId, model.ReviewedAt?.UtcDateTime, model.Notes, model.CreatedAt);
 
     public static DuplicatesResponse ToDto(this DuplicatesResult result) =>
         new(result.Pairs.Select(p => p.ToDto()).ToList(), result.TotalCount, result.PendingCount);
@@ -202,6 +230,12 @@ public static class ContractMappingExtensions
     public static AbTestSessionDto ToDto(this AbTestSessionModel model) =>
         new(model.Id, model.Name, model.PaperId, model.PaperTitle, model.Status, model.CreatedAt, model.CompletedAt,
             model.Results.Select(r => new SummaryResultDto(r.SummaryId, r.ModelName, r.Summary, r.SummaryStatus, r.CreatedAt, r.IsSelected)).ToArray());
+
+    public static PromptVersionDto ToDto(this PromptVersionModel model) =>
+        new(model.Id, model.Name, model.Version, model.SystemPrompt, model.UserPromptTemplate, model.CreatedAt, model.IsActive);
+
+    public static CreatePromptVersionCommand ToApplicationModel(this CreatePromptVersionRequest request) =>
+        new(request.Name, request.Version, request.SystemPrompt, request.UserPromptTemplate);
 
     private static TEnum ParseEnum<TEnum>(string? value, TEnum defaultValue) where TEnum : struct, Enum =>
         Enum.TryParse<TEnum>(value, true, out var parsed) ? parsed : defaultValue;

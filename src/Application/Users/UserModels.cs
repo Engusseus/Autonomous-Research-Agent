@@ -32,4 +32,12 @@ public sealed record UpdateUserCommand(
 public sealed record AssignRolesCommand(
     IReadOnlyCollection<string> Roles);
 
+public sealed record UserApiKeyModel(
+    Guid Id,
+    string Name,
+    string? Permissions,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? ExpiresAt,
+    DateTimeOffset? LastUsedAt);
+
 public sealed record PagedUsersResult(PagedResult<UserModel> Result);

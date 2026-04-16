@@ -2,7 +2,7 @@ import {
   getPaper, updatePaper, getPaperSummaries, getPaperDocuments,
   approveSummary, rejectSummary, createSummarizeJob, queueDocumentProcessing,
   createPaperDocument, getPaperAnnotations, createAnnotation,
-  updateAnnotation, deleteAnnotation
+  updateAnnotation, deleteAnnotation, getHypotheses
 } from '../api.js';
 import {
   h, clear, loading, badge, formatAuthors, formatDate, formatDateTime,
@@ -10,6 +10,7 @@ import {
 } from '../components.js';
 import { renderAnnotationSidebar, createHighlightButton } from '../components/annotations.js';
 import { renderCitationGraph } from '../components/CitationGraph.js';
+import { store } from '../store.js';
 
 export async function render(container, { navigate, params }) {
   const paperId = params.id;
@@ -17,16 +18,18 @@ export async function render(container, { navigate, params }) {
   container.appendChild(loading('Loading paper'));
 
   try {
-    const [paper, summaries, documents, annotations] = await Promise.all([
+    const [paper, summaries, documents, annotations, hypotheses] = await Promise.all([
       getPaper(paperId),
       getPaperSummaries(paperId).catch(() => []),
       getPaperDocuments(paperId).catch(() => []),
       getPaperAnnotations(paperId).catch(() => []),
+      getHypotheses().catch(() => []),
     ]);
 
     clear(container);
 
-    // Back link
+    store.setSlice('papers', { currentPaper: paper });
+
     container.appendChild(
       h('a', {
         className: 'detail-back',
@@ -35,14 +38,12 @@ export async function render(container, { navigate, params }) {
       }, '\u2190 PAPERS')
     );
 
-    // Title + status
     const headerRow = h('div', { className: 'flex items-center gap-4 mb-6' },
       h('h1', { className: 'detail-title', style: 'margin-bottom:0' }, paper.title),
       badge(paper.status),
     );
     container.appendChild(headerRow);
 
-    // Meta row
     const meta = h('div', { className: 'detail-meta' });
     const metaItems = [
       ['Authors', formatAuthors(paper.authors, 10)],
@@ -65,7 +66,6 @@ export async function render(container, { navigate, params }) {
     }
     container.appendChild(meta);
 
-    // Tabs
     const tabs = h('div', { className: 'tabs' });
     const tabNames = ['Overview', 'Documents', 'Citation Graph', 'Annotations'];
     let activeTab = 'Overview';
@@ -93,13 +93,11 @@ export async function render(container, { navigate, params }) {
     tabs.appendChild(...tabBtns);
     container.appendChild(tabs);
 
-    // Overview content
     const overviewContent = h('div', { id: 'tab-overview' });
     const docsContent = h('div', { id: 'tab-documents', style: 'display:none' });
     const graphContent = h('div', { id: 'tab-graph', style: 'display:none' });
     const annotationContent = h('div', { id: 'tab-annotations', style: 'display:none' });
 
-    // Abstract
     if (paper.abstract) {
       overviewContent.appendChild(
         h('div', { className: 'section' },
@@ -111,7 +109,6 @@ export async function render(container, { navigate, params }) {
       );
     }
 
-    // Actions
     const actions = h('div', { className: 'page-actions mb-8' });
     const summarizeBtn = h('button', {
       className: 'btn btn-primary btn-sm',
@@ -151,7 +148,6 @@ export async function render(container, { navigate, params }) {
     }
     overviewContent.appendChild(actions);
 
-    // Summaries section
     const summariesSection = h('div', { className: 'section' });
     summariesSection.appendChild(
       h('div', { className: 'section-header' },
@@ -168,7 +164,6 @@ export async function render(container, { navigate, params }) {
     }
     overviewContent.appendChild(summariesSection);
 
-    // Metadata
     if (paper.metadata) {
       overviewContent.appendChild(
         h('div', { className: 'section' },
@@ -180,7 +175,6 @@ export async function render(container, { navigate, params }) {
       );
     }
 
-    // Documents tab content
     const addDocForm = h('div', { className: 'section' });
     addDocForm.appendChild(
       h('div', { className: 'section-header' },
@@ -222,7 +216,6 @@ export async function render(container, { navigate, params }) {
 
     docsContent.appendChild(addDocForm);
 
-    // Documents list
     const docsSection = h('div', { className: 'section' });
     docsSection.appendChild(
       h('div', { className: 'section-header' },
@@ -254,6 +247,8 @@ export async function render(container, { navigate, params }) {
       try {
         await createAnnotation(paperId, data);
         toast('Annotation created', 'success');
+        const updatedAnnotations = await getPaperAnnotations(paperId);
+        store.setSlice('papers', { annotations: updatedAnnotations });
       } catch (err) {
         toast(err.message, 'error');
       }
@@ -275,13 +270,20 @@ export async function render(container, { navigate, params }) {
       }
     };
 
+    const linkedHypotheses = hypotheses.filter(hyp =>
+      hyp.paperIds && hyp.paperIds.includes(paperId)
+    );
+
     renderAnnotationSidebar(annotationContent, {
       paperId,
       annotations,
+      hypotheses: linkedHypotheses,
       onCreate: handleCreateAnnotation,
       onUpdate: handleUpdateAnnotation,
       onDelete: handleDeleteAnnotation
     });
+
+    setupTextHighlighting(annotationContent, annotations, handleCreateAnnotation);
 
   } catch (err) {
     clear(container);
@@ -289,6 +291,168 @@ export async function render(container, { navigate, params }) {
     container.appendChild(emptyState('Paper not found', err.message));
     toast(err.message, 'error');
   }
+}
+
+function setupTextHighlighting(container, annotations, onCreateAnnotation) {
+  const highlightToolbar = h('div', {
+    id: 'highlight-toolbar',
+    className: 'highlight-toolbar',
+    style: 'position: fixed; bottom: 20px; right: 20px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); padding: 8px 12px; display: none; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.15);'
+  });
+
+  highlightToolbar.appendChild(
+    h('button', {
+      className: 'btn btn-primary btn-sm',
+      id: 'create-annotation-btn',
+      style: 'margin-right: 8px;'
+    }, 'ANNOTATE')
+  );
+
+  highlightToolbar.appendChild(
+    h('button', {
+      className: 'btn btn-secondary btn-sm',
+      id: 'cancel-highlight-btn'
+    }, 'CANCEL')
+  );
+
+  document.body.appendChild(highlightToolbar);
+
+  let selection = null;
+
+  document.addEventListener('mouseup', (e) => {
+    const selectedText = window.getSelection().toString().trim();
+    const abstractEl = document.querySelector('.detail-abstract');
+    const textPanelEls = document.querySelectorAll('.text-panel-content');
+
+    let isInSelectableArea = false;
+    if (abstractEl && abstractEl.contains(e.target)) isInSelectableArea = true;
+    textPanelEls.forEach(el => {
+      if (el.contains(e.target)) isInSelectableArea = true;
+    });
+
+    if (selectedText.length > 10 && isInSelectableArea) {
+      selection = window.getSelection().getRangeAt(0);
+      showHighlightToolbar(e.clientX, e.clientY);
+    } else {
+      hideHighlightToolbar();
+    }
+  });
+
+  document.getElementById('create-annotation-btn')?.addEventListener('click', async () => {
+    if (!selection) return;
+    const selectedText = window.getSelection().toString().trim();
+    if (selectedText.length > 0) {
+      const note = prompt('Add a note (optional):');
+      try {
+        await onCreateAnnotation({ highlightedText: selectedText, note: note || null });
+        toast('Highlight saved', 'success');
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
+    hideHighlightToolbar();
+    window.getSelection().removeAllRanges();
+  });
+
+  document.getElementById('cancel-highlight-btn')?.addEventListener('click', () => {
+    hideHighlightToolbar();
+    window.getSelection().removeAllRanges();
+  });
+
+  function showHighlightToolbar(x, y) {
+    highlightToolbar.style.display = 'flex';
+    highlightToolbar.style.left = `${Math.min(x, window.innerWidth - 200)}px`;
+    highlightToolbar.style.top = `${Math.min(y - 50, window.innerHeight - 80)}px`;
+  }
+
+  function hideHighlightToolbar() {
+    highlightToolbar.style.display = 'none';
+    selection = null;
+  }
+
+  renderHighlights(annotations);
+}
+
+function renderHighlights(annotations) {
+  document.querySelectorAll('.text-highlight').forEach(el => el.remove());
+
+  annotations.forEach(ann => {
+    if (!ann.highlightedText) return;
+
+    const abstractEl = document.querySelector('.detail-abstract');
+    if (abstractEl && abstractEl.textContent.includes(ann.highlightedText)) {
+      highlightText(abstractEl, ann.highlightedText, ann);
+    }
+
+    document.querySelectorAll('.text-panel-content').forEach(panel => {
+      if (panel.textContent.includes(ann.highlightedText)) {
+        highlightText(panel, ann.highlightedText, ann);
+      }
+    });
+  });
+}
+
+function highlightText(container, searchText, annotation) {
+  const regex = new RegExp(`(${escapeRegex(searchText)})`, 'gi');
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+
+  const textNodes = [];
+  while (walker.nextNode()) {
+    textNodes.push(walker.currentNode);
+  }
+
+  for (const node of textNodes) {
+    const text = node.textContent;
+    if (regex.test(text)) {
+      const fragment = document.createDocumentFragment();
+      let lastIndex = 0;
+      let match;
+
+      regex.lastIndex = 0;
+      while ((match = regex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+          fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+        }
+        const span = document.createElement('span');
+        span.className = 'text-highlight';
+        span.style.backgroundColor = getHighlightColor(annotation.userId);
+        span.style.cursor = 'pointer';
+        span.textContent = match[0];
+        span.dataset.annotationId = annotation.id;
+        span.title = `${annotation.userName}: ${annotation.note || 'No note'}`;
+        fragment.appendChild(span);
+        lastIndex = regex.lastIndex;
+      }
+
+      if (lastIndex < text.length) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+      }
+
+      node.parentNode.replaceChild(fragment, node);
+      break;
+    }
+  }
+}
+
+function getHighlightColor(userId) {
+  const colors = [
+    'rgba(255, 235, 59, 0.4)',
+    'rgba(129, 199, 132, 0.4)',
+    'rgba(128, 203, 196, 0.4)',
+    'rgba(255, 138, 101, 0.4)',
+    'rgba(144, 202, 249, 0.4)',
+  ];
+  let hash = 0;
+  const str = String(userId);
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function renderSummaryCard(summary, paperId, navigate) {
@@ -304,7 +468,6 @@ function renderSummaryCard(summary, paperId, navigate) {
   );
   card.appendChild(header);
 
-  // Summary content
   if (summary.summary) {
     const content = typeof summary.summary === 'string' ? summary.summary : JSON.stringify(summary.summary, null, 2);
     card.appendChild(h('div', { className: 'summary-card-body' },
@@ -312,7 +475,6 @@ function renderSummaryCard(summary, paperId, navigate) {
     ));
   }
 
-  // Review info
   if (summary.reviewedBy) {
     card.appendChild(h('div', { className: 'summary-card-meta mt-4' },
       `Reviewed by ${summary.reviewedBy} on ${formatDateTime(summary.reviewedAt)}`,
@@ -320,7 +482,6 @@ function renderSummaryCard(summary, paperId, navigate) {
     ));
   }
 
-  // Actions
   if (summary.status === 'Generated' || summary.status === 'Pending') {
     const actions = h('div', { className: 'summary-card-actions' });
     actions.appendChild(
@@ -396,7 +557,7 @@ function renderDocumentCard(doc, paperId, navigate) {
     const textPanel = h('div', {
       id: `doc-text-${doc.id}`,
       hidden: true,
-      className: 'summary-card-body',
+      className: 'summary-card-body text-panel-content',
     },
       h('pre', {
         className: 'json-block',
@@ -430,3 +591,9 @@ function renderDocumentCard(doc, paperId, navigate) {
 
   return card;
 }
+
+export const init = () => {};
+export const cleanup = () => {
+  const toolbar = document.getElementById('highlight-toolbar');
+  if (toolbar) toolbar.remove();
+};

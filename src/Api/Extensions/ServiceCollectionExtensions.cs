@@ -9,6 +9,7 @@ using AutonomousResearchAgent.Api.Contracts.Search;
 using AutonomousResearchAgent.Api.Contracts.Summaries;
 using AutonomousResearchAgent.Api.Middleware;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -70,7 +71,8 @@ public static class ServiceCollectionExtensions
                         ClockSkew = TimeSpan.FromMinutes(2)
                     };
                 }
-            });
+            })
+            .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationDefaults.AuthenticationScheme, null);
 
         return services;
     }
@@ -184,6 +186,23 @@ public static class ServiceCollectionExtensions
                         Window = TimeSpan.FromSeconds(rateLimitOptions.WindowSeconds),
                         QueueLimit = 0
                     }));
+
+            options.AddPolicy(RateLimiterPolicyNames.Strict, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: GetPartitionKey(context),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 5,
+                        Window = TimeSpan.FromSeconds(rateLimitOptions.WindowSeconds),
+                        QueueLimit = 0
+                    }));
+
+            options.OnRejected = async (context, cancellationToken) =>
+            {
+                context.HttpContext.Response.Headers["X-RateLimit-Remaining"] = "0";
+                context.HttpContext.Response.Headers["X-RateLimit-Reset"] = DateTimeOffset.UtcNow.AddSeconds(60).ToUnixTimeSeconds().ToString();
+                await Task.CompletedTask;
+            };
         });
 
         return services;

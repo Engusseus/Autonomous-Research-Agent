@@ -300,4 +300,41 @@ Provide your answer below. Start with a brief summary if the question requires i
     }
 
     private bool IsPostgres() => string.Equals(dbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal);
+
+    public async Task<ChatResult> ChatWithToolsAsync(ChatRequestWithTools request, CancellationToken cancellationToken)
+    {
+        var chunks = await SearchRelevantChunksAsync(request.Question, request.TopK, cancellationToken);
+
+        if (chunks.Count == 0)
+        {
+            return new ChatResult("I couldn't find any relevant information in the knowledge base to answer your question.", []);
+        }
+
+        return new ChatResult("Tool calling not yet implemented. Use ChatAsync for basic RAG.", chunks);
+    }
+
+    public async IAsyncEnumerable<string> StreamChatWithToolsAsync(
+        string question,
+        int topK,
+        bool includeTools,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var stream = StreamChatAsync(question, topK, cancellationToken);
+        await foreach (var token in stream)
+        {
+            yield return token;
+        }
+    }
+
+    public async Task<ChunkCitation?> GetSourceAsync(Guid chunkId, Guid paperId, CancellationToken cancellationToken)
+    {
+        var chunk = await dbContext.DocumentChunks
+            .AsNoTracking()
+            .Include(c => c.PaperDocument)
+            .FirstOrDefaultAsync(c => c.Id == chunkId, cancellationToken);
+
+        if (chunk == null) return null;
+
+        return new ChunkCitation(paperId, chunkId, chunk.Text ?? string.Empty, 1.0, 0);
+    }
 }

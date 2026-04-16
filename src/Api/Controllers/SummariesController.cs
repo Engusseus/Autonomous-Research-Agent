@@ -1,3 +1,4 @@
+using System.Text;
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Summaries;
 using AutonomousResearchAgent.Api.Extensions;
@@ -13,7 +14,8 @@ namespace AutonomousResearchAgent.Api.Controllers;
 public sealed class SummariesController(
     ISummaryService summaryService,
     ISummaryDiffService summaryDiffService,
-    ISummarizationService summarizationService) : ControllerBase
+    ISummarizationService summarizationService,
+    IPromptVersionService promptVersionService) : ControllerBase
 {
     [HttpGet("papers/{id:guid}/summaries")]
     [Authorize(Policy = PolicyNames.ReadAccess)]
@@ -95,11 +97,12 @@ public sealed class SummariesController(
     [Authorize(Policy = PolicyNames.EditAccess)]
     [EnableRateLimiting(RateLimiterPolicyNames.Expensive)]
     [ProducesResponseType(typeof(AbTestSessionDto), StatusCodes.Status201Created)]
-    public async Task<ActionResult<AbTestSessionDto>> CreateAbTest(Guid paperId, [FromBody] AutonomousResearchAgent.Api.Contracts.Summaries.CreateAbTestRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<AbTestSessionDto>> CreateAbTest(Guid paperId, [FromBody] Contracts.Summaries.CreateAbTestRequest request, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
+        if (userId == null) return Unauthorized();
         var appRequest = request.ToApplicationModel();
-        var created = await summarizationService.CreateAbTestSessionAsync(appRequest with { PaperId = paperId }, userId, cancellationToken);
+        var created = await summarizationService.CreateAbTestSessionAsync(appRequest with { PaperId = paperId }, Guid.Empty, cancellationToken);
         return CreatedAtAction(nameof(GetAbTestSession), new { sessionId = created.Id }, created.ToDto());
     }
 
@@ -140,6 +143,109 @@ public sealed class SummariesController(
         return Ok(result.ToDto());
     }
 
+    [HttpGet("papers/{paperId:guid}/summaries/{summaryId:guid}/stream")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task StreamSummary(Guid paperId, Guid summaryId, CancellationToken cancellationToken)
+    {
+        Response.ContentType = "text/event-stream";
+        Response.StatusCode = 200;
+
+        try
+        {
+            var summary = await summaryService.GetByIdAsync(summaryId, cancellationToken);
+            var text = summary.Summary?.ToJsonString() ?? "Summary not available.";
+
+            var words = text.Split(' ');
+            foreach (var word in words)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+                var bytes = Encoding.UTF8.GetBytes($"data: {word} ");
+                await Response.Body.WriteAsync(bytes, cancellationToken);
+                await Response.Body.FlushAsync(cancellationToken);
+                await Task.Delay(20, cancellationToken);
+            }
+
+            var endBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
+            await Response.Body.WriteAsync(endBytes, cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
+        }
+        catch
+        {
+            if (!Response.HasStarted)
+            {
+                Response.StatusCode = 500;
+            }
+        }
+    }
+
+    [HttpPost("summaries/prompt-versions")]
+    [Authorize(Policy = PolicyNames.AdminAccess)]
+    [ProducesResponseType(typeof(PromptVersionDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PromptVersionDto>> CreatePromptVersion([FromBody] CreatePromptVersionRequest request, CancellationToken cancellationToken)
+    {
+        var command = request.ToApplicationModel();
+        var created = await promptVersionService.CreateAsync(command, cancellationToken);
+        return CreatedAtAction(nameof(GetPromptVersion), new { id = created.Id }, created.ToDto());
+    }
+
+    [HttpGet("summaries/prompt-versions")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<PromptVersionDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<PromptVersionDto>>> GetPromptVersions(CancellationToken cancellationToken)
+    {
+        var versions = await promptVersionService.ListAsync(cancellationToken);
+        return Ok(versions.Select(v => v.ToDto()).ToList());
+    }
+
+    [HttpGet("summaries/prompt-versions/{id:guid}")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(typeof(PromptVersionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PromptVersionDto>> GetPromptVersion(Guid id, CancellationToken cancellationToken)
+    {
+        var version = await promptVersionService.GetByIdAsync(id, cancellationToken);
+        if (version == null)
+        {
+            return NotFound();
+        }
+        return Ok(version.ToDto());
+    }
+
+    [HttpGet("summaries/prompt-versions/active")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(typeof(PromptVersionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PromptVersionDto>> GetActivePromptVersion(CancellationToken cancellationToken)
+    {
+        var version = await promptVersionService.GetActiveVersionAsync(cancellationToken);
+        if (version == null)
+        {
+            return NotFound();
+        }
+        return Ok(version.ToDto());
+    }
+
+    [HttpPost("summaries/prompt-versions/{id:guid}/activate")]
+    [Authorize(Policy = PolicyNames.AdminAccess)]
+    [ProducesResponseType(typeof(PromptVersionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PromptVersionDto>> ActivatePromptVersion(Guid id, CancellationToken cancellationToken)
+    {
+        var version = await promptVersionService.SetActiveAsync(id, cancellationToken);
+        return Ok(version.ToDto());
+    }
+
+    [HttpPost("summaries/prompt-versions/{id:guid}/deactivate")]
+    [Authorize(Policy = PolicyNames.AdminAccess)]
+    [ProducesResponseType(typeof(PromptVersionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PromptVersionDto>> DeactivatePromptVersion(Guid id, CancellationToken cancellationToken)
+    {
+        var version = await promptVersionService.DeactivateAsync(id, cancellationToken);
+        return Ok(version.ToDto());
+    }
+
     private int? GetUserId() => User.GetUserId();
 }
-

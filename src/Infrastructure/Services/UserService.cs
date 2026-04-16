@@ -177,8 +177,64 @@ public sealed class UserService(
         return new UserModel(user.Id, user.Email, user.Username, user.IsActive, user.UserRoles.Select(ur => ur.Role.Name).ToList(), user.CreatedAt, user.UpdatedAt);
     }
 
+    public async Task<IEnumerable<UserApiKeyModel>> GetApiKeysAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var keys = await dbContext.UserApiKeys
+            .Where(k => k.UserId == userId)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        return keys.Select(k => new UserApiKeyModel(k.Id, k.Name, k.Permissions, k.CreatedAt, k.ExpiresAt, k.LastUsedAt));
+    }
+
+    public async Task<(UserApiKeyModel ApiKey, string RawKey)> CreateApiKeyAsync(Guid userId, string name, string? permissions, DateTimeOffset? expiresAt, CancellationToken cancellationToken)
+    {
+        var rawKey = GenerateRawKey();
+        var keyHash = ComputeHash(rawKey);
+
+        var apiKey = new UserApiKey
+        {
+            UserId = userId,
+            Name = name,
+            KeyHash = keyHash,
+            Permissions = permissions ?? string.Empty,
+            ExpiresAt = expiresAt
+        };
+
+        dbContext.UserApiKeys.Add(apiKey);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Created API key {KeyId} for user {UserId}", apiKey.Id, userId);
+
+        return (new UserApiKeyModel(apiKey.Id, apiKey.Name, apiKey.Permissions, apiKey.CreatedAt, apiKey.ExpiresAt, apiKey.LastUsedAt), rawKey);
+    }
+
+    public async Task DeleteApiKeyAsync(Guid userId, Guid keyId, CancellationToken cancellationToken)
+    {
+        var apiKey = await dbContext.UserApiKeys
+            .FirstOrDefaultAsync(k => k.Id == keyId && k.UserId == userId, cancellationToken)
+            ?? throw new NotFoundException("ApiKey", keyId);
+
+        dbContext.UserApiKeys.Remove(apiKey);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Deleted API key {KeyId} for user {UserId}", keyId, userId);
+    }
+
     private static string HashPassword(string password)
     {
         return BCrypt.Net.BCrypt.HashPassword(password);
+    }
+
+    private static string GenerateRawKey()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes);
+    }
+
+    private static string ComputeHash(string key)
+    {
+        using var sha256 = SHA256.Create();
+        var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(key));
+        return Convert.ToBase64String(bytes);
     }
 }

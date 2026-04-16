@@ -14,6 +14,13 @@ using Pgvector;
 
 namespace AutonomousResearchAgent.Infrastructure.Services;
 
+public enum VectorDistanceOperator
+{
+    CosineDistance,
+    L2Distance,
+    NegativeInnerProduct
+}
+
 public sealed class SearchService(
     IDbContextFactory<ApplicationDbContext> dbContextFactory,
     IEmbeddingService embeddingService,
@@ -31,50 +38,7 @@ public sealed class SearchService(
     {
         if (IsPostgres(dbContext))
         {
-            var pattern = QueryHelpers.ToILikePattern(request.Query);
-
-            var filteredQuery = dbContext.Papers
-                .AsNoTracking()
-                .Where(p =>
-                    EF.Functions.ILike(p.Title, pattern) ||
-                    (p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern)) ||
-                    p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)) ||
-                    p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)));
-
-            var totalCount = await filteredQuery.LongCountAsync(cancellationToken);
-
-            var titleWeight = _searchWeights.Title;
-            var abstractWeight = _searchWeights.Abstract;
-            var summaryWeight = _searchWeights.Summary;
-            var documentWeight = _searchWeights.Document;
-
-            var rankedQuery = filteredQuery
-                .Select(p => new
-                {
-                    Paper = p,
-                    MatchedInTitle = EF.Functions.ILike(p.Title, pattern),
-                    MatchedInAbstract = p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern),
-                    MatchedInSummary = p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)),
-                    MatchedInDocument = p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)),
-                    Score =
-                        (EF.Functions.ILike(p.Title, pattern) ? titleWeight : 0.0) +
-                        ((p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern)) ? abstractWeight : 0.0) +
-                        (p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)) ? summaryWeight : 0.0) +
-                        (p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)) ? documentWeight : 0.0)
-                });
-
-            var rankedPapers = await rankedQuery
-                .OrderByDescending(x => x.Score)
-                .ThenByDescending(x => x.Paper.UpdatedAt)
-                .Skip((request.PageNumber - 1) * request.PageSize)
-                .Take(request.PageSize)
-                .ToListAsync(cancellationToken);
-
-            var items = rankedPapers
-                .Select(x => ToKeywordResult(x.Paper, request.Query, x.Score, x.MatchedInTitle, x.MatchedInAbstract, x.MatchedInSummary, x.MatchedInDocument))
-                .ToList();
-
-            return new PagedResult<SearchResultModel>(items, request.PageNumber, request.PageSize, totalCount);
+            return await SearchWithFullTextAsync(dbContext, request, cancellationToken);
         }
 
         var papers = await dbContext.Papers
@@ -119,6 +83,49 @@ public sealed class SearchService(
         return new PagedResult<SearchResultModel>(keywordItems, request.PageNumber, request.PageSize, keywordMatches.Count);
     }
 
+    private async Task<PagedResult<SearchResultModel>> SearchWithFullTextAsync(ApplicationDbContext dbContext, SearchRequestModel request, CancellationToken cancellationToken)
+    {
+        var pattern = QueryHelpers.ToILikePattern(request.Query);
+
+        var filteredQuery = dbContext.Papers
+            .AsNoTracking()
+            .Where(p =>
+                EF.Functions.ILike(p.Title, pattern) ||
+                (p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern)) ||
+                p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)) ||
+                p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)));
+
+        var totalCount = await filteredQuery.LongCountAsync(cancellationToken);
+
+        var rankedQuery = filteredQuery
+            .Select(p => new
+            {
+                Paper = p,
+                MatchedInTitle = EF.Functions.ILike(p.Title, pattern),
+                MatchedInAbstract = p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern),
+                MatchedInSummary = p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)),
+                MatchedInDocument = p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)),
+                Score = ComputeKeywordScore(
+                    EF.Functions.ILike(p.Title, pattern),
+                    p.Abstract != null && EF.Functions.ILike(p.Abstract, pattern),
+                    p.Summaries.Any(s => s.SearchText != null && EF.Functions.ILike(s.SearchText, pattern)),
+                    p.Documents.Any(d => d.ExtractedText != null && EF.Functions.ILike(d.ExtractedText, pattern)))
+            });
+
+        var rankedPapers = await rankedQuery
+            .OrderByDescending(x => x.Score)
+            .ThenByDescending(x => x.Paper.UpdatedAt)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .ToListAsync(cancellationToken);
+
+        var items = rankedPapers
+            .Select(x => ToKeywordResult(x.Paper, request.Query, x.Score, x.MatchedInTitle, x.MatchedInAbstract, x.MatchedInSummary, x.MatchedInDocument))
+            .ToList();
+
+        return new PagedResult<SearchResultModel>(items, request.PageNumber, request.PageSize, totalCount);
+    }
+
     public async Task<PagedResult<SearchResultModel>> SemanticSearchAsync(SemanticSearchRequestModel request, CancellationToken cancellationToken)
     {
         var queryEmbedding = await embeddingService.GenerateQueryEmbeddingAsync(request.Query, cancellationToken);
@@ -127,7 +134,7 @@ public sealed class SearchService(
 
         if (IsPostgres(dbContext))
         {
-            return await SemanticSearchWithDatabaseScoringAsync(dbContext, queryEmbedding, request, cancellationToken);
+            return await SemanticSearchWithDatabaseScoringAsync(dbContext, queryEmbedding, request, VectorDistanceOperator.CosineDistance, cancellationToken);
         }
 
         var candidates = await LoadSemanticCandidatesAsync(dbContext, cancellationToken);
@@ -199,16 +206,29 @@ public sealed class SearchService(
         return new PagedResult<SearchResultModel>(pageItems, request.PageNumber, request.PageSize, totalCount);
     }
 
-    private async Task<PagedResult<SearchResultModel>> SemanticSearchWithDatabaseScoringAsync(ApplicationDbContext dbContext, float[] queryEmbedding, SemanticSearchRequestModel request, CancellationToken cancellationToken)
+    private async Task<PagedResult<SearchResultModel>> SemanticSearchWithDatabaseScoringAsync(
+        ApplicationDbContext dbContext,
+        float[] queryEmbedding,
+        SemanticSearchRequestModel request,
+        VectorDistanceOperator distanceOperator,
+        CancellationToken cancellationToken)
     {
+        var operatorSymbol = distanceOperator switch
+        {
+            VectorDistanceOperator.CosineDistance => "<@>",
+            VectorDistanceOperator.L2Distance => "<->",
+            VectorDistanceOperator.NegativeInnerProduct => "<#>",
+            _ => "<@>"
+        };
+
         await using var command = dbContext.Database.GetDbConnection().CreateCommand();
         command.CommandText = $@"
-            SELECT pe.""Id"", (pe.""Vector"" <-> @query_embedding) AS ""Distance""
+            SELECT pe.""Id"", pe.""Vector"" {operatorSymbol} @query_embedding AS ""Distance""
             FROM ""paper_embeddings"" pe
             WHERE pe.""PaperId"" IS NOT NULL
               AND pe.""Vector"" IS NOT NULL
               AND (pe.""EmbeddingType"" = 'PaperAbstract' OR pe.""EmbeddingType"" = 'PaperSummary')
-            ORDER BY pe.""Vector"" <-> @query_embedding
+            ORDER BY pe.""Vector"" {operatorSymbol} @query_embedding
             LIMIT @maxCandidates";
 
         var embeddingParam = new NpgsqlParameter("query_embedding", new Vector(queryEmbedding));
@@ -221,7 +241,8 @@ public sealed class SearchService(
         var embeddingIds = new List<(Guid Id, double Distance)>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            embeddingIds.Add((reader.GetGuid(0), 1 - reader.GetDouble(1)));
+            var distance = reader.GetDouble(1);
+            embeddingIds.Add((reader.GetGuid(0), distance));
         }
         await reader.CloseAsync();
 
@@ -305,23 +326,52 @@ public sealed class SearchService(
         var keywordResults = await keywordTask;
         var semanticResults = await semanticTask;
 
-        var combined = keywordResults.Items
+        var keywordRanked = keywordResults.Items
+            .Select((item, index) => new { Item = item, Rank = index + 1 })
+            .ToDictionary(x => x.Item.PaperId, x => x.Rank);
+
+        var semanticRanked = semanticResults.Items
+            .Select((item, index) => new { Item = item, Rank = index + 1 })
+            .ToDictionary(x => x.Item.PaperId, x => x.Rank);
+
+        var allPaperIds = keywordResults.Items
             .Concat(semanticResults.Items)
-            .GroupBy(item => item.PaperId)
-            .Select(group =>
+            .Select(x => x.PaperId)
+            .Distinct()
+            .ToList();
+
+        var k = _searchWeights.RrfConstantK;
+
+        var combined = allPaperIds
+            .Select(paperId =>
             {
-                var keywordScore = group.Where(g => g.MatchType == "keyword").Select(g => g.Score).DefaultIfEmpty(0d).Max();
-                var semanticScore = group.Where(g => g.MatchType != "keyword").Select(g => g.Score).DefaultIfEmpty(0d).Max();
-                var seed = group.First();
+                var keywordItem = keywordResults.Items.FirstOrDefault(x => x.PaperId == paperId);
+                var semanticItem = semanticResults.Items.FirstOrDefault(x => x.PaperId == paperId);
+                var seed = keywordItem ?? semanticItem!;
+
+                var keywordRank = keywordRanked.GetValueOrDefault(paperId, int.MaxValue);
+                var semanticRank = semanticRanked.GetValueOrDefault(paperId, int.MaxValue);
+
+                var keywordRrfScore = keywordRank != int.MaxValue ? 1.0 / (k + keywordRank) : 0;
+                var semanticRrfScore = semanticRank != int.MaxValue ? 1.0 / (k + semanticRank) : 0;
+
+                var rrfScore = keywordRrfScore + semanticRrfScore;
+
+                var keywordScore = keywordItem?.Score ?? 0;
+                var semanticScore = semanticItem?.Score ?? 0;
 
                 return seed with
                 {
                     MatchType = "hybrid",
-                    Score = (keywordScore * request.KeywordWeight) + (semanticScore * request.SemanticWeight),
+                    Score = rrfScore,
                     Highlights = new JsonObject
                     {
                         ["keywordScore"] = keywordScore,
-                        ["semanticScore"] = semanticScore
+                        ["semanticScore"] = semanticScore,
+                        ["keywordRrfScore"] = keywordRrfScore,
+                        ["semanticRrfScore"] = semanticRrfScore,
+                        ["keywordRank"] = keywordRank == int.MaxValue ? null : keywordRank,
+                        ["semanticRank"] = semanticRank == int.MaxValue ? null : semanticRank
                     }
                 };
             })
@@ -335,6 +385,118 @@ public sealed class SearchService(
             .ToList();
 
         return new PagedResult<SearchResultModel>(pageItems, request.PageNumber, request.PageSize, totalCount);
+    }
+
+    public async Task<PagedResult<ChunkSearchResultModel>> SearchDocumentChunksAsync(ChunkSearchRequestModel request, CancellationToken cancellationToken)
+    {
+        var queryEmbedding = await embeddingService.GenerateQueryEmbeddingAsync(request.Query, cancellationToken);
+
+        await using var dbContext = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        if (IsPostgres(dbContext))
+        {
+            return await SearchChunksWithDatabaseScoringAsync(dbContext, queryEmbedding, request, cancellationToken);
+        }
+
+        return await SearchChunksInMemoryAsync(dbContext, queryEmbedding, request, cancellationToken);
+    }
+
+    private async Task<PagedResult<ChunkSearchResultModel>> SearchChunksWithDatabaseScoringAsync(
+        ApplicationDbContext dbContext,
+        float[] queryEmbedding,
+        ChunkSearchRequestModel request,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dbContext.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $@"
+            SELECT pe.""DocumentChunkId"", pc.""Text"", p.""Title"", p.""Id"", pe.""Vector"" <@> @query_embedding AS ""Distance""
+            FROM ""paper_embeddings"" pe
+            INNER JOIN ""document_chunks"" pc ON pe.""DocumentChunkId"" = pc.""Id""
+            INNER JOIN ""paper_documents"" pd ON pc.""PaperDocumentId"" = pd.""Id""
+            INNER JOIN ""papers"" p ON pd.""PaperId"" = p.""Id""
+            WHERE pe.""Vector"" IS NOT NULL
+              AND pe.""EmbeddingType"" = 'DocumentChunk'
+            ORDER BY pe.""Vector"" <@> @query_embedding
+            LIMIT @maxCandidates";
+
+        var embeddingParam = new NpgsqlParameter("query_embedding", new Vector(queryEmbedding));
+        command.Parameters.Add(embeddingParam);
+        command.Parameters.Add(new NpgsqlParameter("maxCandidates", request.MaxCandidates));
+
+        await dbContext.Database.OpenConnectionAsync(cancellationToken);
+        using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var results = new List<ChunkSearchResultModel>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(new ChunkSearchResultModel(
+                ChunkId: reader.GetGuid(0),
+                PaperId: reader.GetGuid(3),
+                PaperTitle: reader.GetString(2),
+                ChunkText: reader.GetString(1),
+                Score: reader.GetDouble(4)));
+        }
+
+        await reader.CloseAsync();
+
+        if (results.Count == 0)
+        {
+            return new PagedResult<ChunkSearchResultModel>([], request.PageNumber, request.PageSize, 0);
+        }
+
+        var totalCount = results.Count;
+        var pagedResults = results
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .ToList();
+
+        return new PagedResult<ChunkSearchResultModel>(pagedResults, request.PageNumber, request.PageSize, totalCount);
+    }
+
+    private async Task<PagedResult<ChunkSearchResultModel>> SearchChunksInMemoryAsync(
+        ApplicationDbContext dbContext,
+        float[] queryEmbedding,
+        ChunkSearchRequestModel request,
+        CancellationToken cancellationToken)
+    {
+        var candidates = await dbContext.PaperEmbeddings
+            .AsNoTracking()
+            .Include(e => e.DocumentChunk)
+                .ThenInclude(c => c!.PaperDocument)
+                    .ThenInclude(d => d.Paper)
+            .Where(e =>
+                e.Vector != null &&
+                e.EmbeddingType == EmbeddingType.DocumentChunk &&
+                e.DocumentChunk != null &&
+                e.DocumentChunk.PaperDocument != null &&
+                e.DocumentChunk.PaperDocument.Paper != null)
+            .ToListAsync(cancellationToken);
+
+        var scored = candidates
+            .Select(e => new
+            {
+                Embedding = e,
+                Score = VectorMath.CosineSimilarity(e.Vector!, queryEmbedding)
+            })
+            .OrderByDescending(x => x.Score)
+            .ToList();
+
+        var results = scored
+            .Select(x => new ChunkSearchResultModel(
+                x.Embedding.DocumentChunk!.Id,
+                x.Embedding.DocumentChunk.PaperDocument.Paper.Id,
+                x.Embedding.DocumentChunk.PaperDocument.Paper.Title,
+                x.Embedding.DocumentChunk.Text,
+                x.Score))
+            .ToList();
+
+        var totalCount = results.Count;
+        var pagedResults = results
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .ToList();
+
+        return new PagedResult<ChunkSearchResultModel>(pagedResults, request.PageNumber, request.PageSize, totalCount);
     }
 
     private static SearchResultModel ToKeywordResult(
@@ -369,20 +531,6 @@ public sealed class SearchService(
 
     private async Task<List<PaperEmbedding>> LoadSemanticCandidatesAsync(ApplicationDbContext dbContext, CancellationToken cancellationToken)
     {
-        if (IsPostgres(dbContext))
-        {
-            return await dbContext.PaperEmbeddings
-                .AsNoTracking()
-                .Include(e => e.Paper)
-                .Include(e => e.Summary)
-                .Where(e =>
-                    e.PaperId != null &&
-                    e.Paper != null &&
-                    e.Vector != null &&
-                    (e.EmbeddingType == EmbeddingType.PaperAbstract || e.EmbeddingType == EmbeddingType.PaperSummary || e.EmbeddingType == EmbeddingType.DocumentChunk))
-                .ToListAsync(cancellationToken);
-        }
-
         return await dbContext.PaperEmbeddings
             .AsNoTracking()
             .Include(e => e.Paper)

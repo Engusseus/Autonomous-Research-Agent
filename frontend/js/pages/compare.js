@@ -1,5 +1,8 @@
 import { getPaper, getConfig } from '../api.js';
 import { h, clear, loading, toast, emptyState, formatAuthors, badge } from '../components.js';
+import { store } from '../store.js';
+
+let clusterChart = null;
 
 async function tryCompareFieldsApi(leftId, rightId) {
   const { baseUrl, token } = getConfig();
@@ -51,6 +54,8 @@ export async function render(container, { navigate, params, signal }) {
 
   clear(container);
   container.appendChild(loading('Loading papers...'));
+
+  loadD3Library();
 
   try {
     const [leftPaper, rightPaper] = await Promise.all([
@@ -135,9 +140,251 @@ function renderCompareView(container, left, right, navigate, fieldComparison) {
               h('div', { className: 'compare-identical' }, 'No abstract available')
           )
         )
+      ),
+      h('div', { className: 'compare-section' },
+        h('div', { className: 'section-header' },
+          h('h2', { className: 'section-title' }, 'Semantic Cluster Map')
+        ),
+        h('div', { id: 'cluster-map-container', className: 'section', style: 'min-height: 500px;' })
       )
     )
   );
+
+  if (fieldComparison && fieldComparison.semanticClusters) {
+    renderClusterMap(fieldComparison.semanticClusters);
+  } else {
+    renderPlaceholderClusterMap(container);
+  }
+}
+
+function renderClusterMap(clusters) {
+  const container = document.getElementById('cluster-map-container');
+  if (!container || typeof d3 === 'undefined') return;
+
+  clear(container);
+
+  const width = container.clientWidth || 700;
+  const height = 500;
+
+  const svg = d3.select(container)
+    .append('svg')
+    .attr('width', width)
+    .attr('height', height)
+    .attr('viewBox', `0 0 ${width} ${height}`);
+
+  const nodes = [];
+  const links = [];
+  const clusterColors = {};
+
+  clusters.forEach((cluster, idx) => {
+    const color = d3.schemeCategory10[idx % 10];
+    clusterColors[cluster.id] = color;
+
+    nodes.push({
+      id: cluster.id,
+      label: cluster.label || cluster.id,
+      type: 'cluster',
+      color: color,
+      size: cluster.papers ? cluster.papers.length * 3 + 10 : 20,
+    });
+
+    if (cluster.papers) {
+      cluster.papers.forEach(paper => {
+        nodes.push({
+          id: paper.id,
+          label: paper.title || paper.id,
+          type: 'paper',
+          color: color,
+          size: 8,
+          clusterId: cluster.id,
+        });
+
+        links.push({
+          source: cluster.id,
+          target: paper.id,
+          type: 'belongs_to',
+        });
+      });
+    }
+
+    if (cluster.connections) {
+      cluster.connections.forEach(conn => {
+        links.push({
+          source: cluster.id,
+          target: conn,
+          type: 'connected_to',
+        });
+      });
+    }
+  });
+
+  const simulation = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(100))
+    .force('charge', d3.forceManyBody().strength(-300))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide().radius(d => d.size + 5));
+
+  const linkElements = svg.append('g')
+    .selectAll('line')
+    .data(links)
+    .enter()
+    .append('line')
+    .attr('stroke', d => d.type === 'belongs_to' ? '#ccc' : '#999')
+    .attr('stroke-width', d => d.type === 'belongs_to' ? 1 : 2)
+    .attr('stroke-dasharray', d => d.type === 'connected_to' ? '4,4' : 'none');
+
+  const nodeElements = svg.append('g')
+    .selectAll('circle')
+    .data(nodes)
+    .enter()
+    .append('circle')
+    .attr('r', d => d.size)
+    .attr('fill', d => d.color)
+    .attr('stroke', '#fff')
+    .attr('stroke-width', 2)
+    .style('cursor', 'pointer')
+    .call(d3.drag
+      .on('start', dragStarted)
+      .on('drag', dragged)
+      .on('end', dragEnded));
+
+  nodeElements.append('title')
+    .text(d => d.label);
+
+  const labelElements = svg.append('g')
+    .selectAll('text')
+    .data(nodes.filter(n => n.type === 'cluster'))
+    .enter()
+    .append('text')
+    .attr('text-anchor', 'middle')
+    .attr('dy', d => d.size + 15)
+    .attr('fill', '#333')
+    .attr('font-size', '12px')
+    .attr('font-weight', '600')
+    .text(d => d.label);
+
+  simulation.on('tick', () => {
+    linkElements
+      .attr('x1', d => d.source.x)
+      .attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x)
+      .attr('y2', d => d.target.y);
+
+    nodeElements
+      .attr('cx', d => d.x)
+      .attr('cy', d => d.y);
+
+    labelElements
+      .attr('x', d => d.x)
+      .attr('y', d => d.y);
+  });
+
+  function dragStarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
+  }
+
+  function dragged(event, d) {
+    d.fx = event.x;
+    d.fy = event.y;
+  }
+
+  function dragEnded(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+  }
+
+  clusterChart = { simulation, nodes, links };
+}
+
+function renderPlaceholderClusterMap(container) {
+  const mapContainer = container.querySelector('#cluster-map-container');
+  if (!mapContainer) return;
+
+  mapContainer.innerHTML = '';
+
+  const width = mapContainer.clientWidth || 700;
+  const height = 500;
+
+  const svg = d3.select(mapContainer)
+    .append('svg')
+    .attr('width', width)
+    .attr('height', height)
+    .attr('viewBox', `0 0 ${width} ${height}`);
+
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  const clusterData = [
+    { id: 'left', label: 'Left Paper', x: centerX - 150, y: centerY, color: '#4f46e5' },
+    { id: 'right', label: 'Right Paper', x: centerX + 150, y: centerY, color: '#10b981' },
+    { id: 'common', label: 'Common Concepts', x: centerX, y: centerY - 120, color: '#f59e0b' },
+    { id: 'unique-left', label: 'Unique Left', x: centerX - 180, y: centerY + 120, color: '#6366f1' },
+    { id: 'unique-right', label: 'Unique Right', x: centerX + 180, y: centerY + 120, color: '#14b8a6' },
+  ];
+
+  const links = [
+    { source: 'left', target: 'common' },
+    { source: 'right', target: 'common' },
+    { source: 'left', target: 'unique-left' },
+    { source: 'right', target: 'unique-right' },
+    { source: 'common', target: 'unique-left' },
+    { source: 'common', target: 'unique-right' },
+  ];
+
+  const linkElements = svg.append('g')
+    .selectAll('line')
+    .data(links)
+    .enter()
+    .append('line')
+    .attr('x1', d => {
+      const s = clusterData.find(c => c.id === d.source);
+      return s.x;
+    })
+    .attr('y1', d => {
+      const s = clusterData.find(c => c.id === d.source);
+      return s.y;
+    })
+    .attr('x2', d => {
+      const t = clusterData.find(c => c.id === d.target);
+      return t.x;
+    })
+    .attr('y2', d => {
+      const t = clusterData.find(c => c.id === d.target);
+      return t.y;
+    })
+    .attr('stroke', '#ccc')
+    .attr('stroke-width', 2)
+    .attr('stroke-dasharray', '4,4');
+
+  const nodeElements = svg.append('g')
+    .selectAll('circle')
+    .data(clusterData)
+    .enter()
+    .append('circle')
+    .attr('cx', d => d.x)
+    .attr('cy', d => d.y)
+    .attr('r', 30)
+    .attr('fill', d => d.color)
+    .attr('stroke', '#fff')
+    .attr('stroke-width', 3);
+
+  nodeElements.append('title')
+    .text(d => d.label);
+
+  svg.selectAll('text')
+    .data(clusterData)
+    .enter()
+    .append('text')
+    .attr('x', d => d.x)
+    .attr('y', d => d.y + 50)
+    .attr('text-anchor', 'middle')
+    .attr('fill', '#333')
+    .attr('font-size', '12px')
+    .attr('font-weight', '600')
+    .text(d => d.label);
 }
 
 function computeFieldDiffs(left, right) {
@@ -283,5 +530,17 @@ function mergeSegments(segments) {
   return merged;
 }
 
+function loadD3Library() {
+  if (document.querySelector('script[src*="d3"]')) return;
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js';
+  document.head.appendChild(script);
+}
+
 export const init = () => {};
-export const cleanup = () => {};
+export const cleanup = () => {
+  if (clusterChart && clusterChart.simulation) {
+    clusterChart.simulation.stop();
+    clusterChart = null;
+  }
+};

@@ -50,3 +50,19 @@ public sealed record NotificationQuery(
 public sealed record RunSavedSearchResult(
     int NewPapersCount,
     Guid? JobId);
+
+public sealed record DigestModel(
+    Guid Id,
+    int UserId,
+    DigestFrequency Frequency,
+    string Topic,
+    string Content,
+    int NewPapersCount,
+    DateTimeOffset CreatedAt);
+
+public sealed record CreateDigestCommand(
+    int UserId,
+    DigestFrequency Frequency,
+    string Topic,
+    string Content,
+    int NewPapersCount);

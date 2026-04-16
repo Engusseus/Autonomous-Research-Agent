@@ -10,6 +10,7 @@ public sealed class AuditEvent : AuditableEntity
     public string Action { get; set; } = string.Empty;
     public string? DiffJson { get; set; }
     public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
+    public string? IpAddress { get; set; }
 
     [ForeignKey(nameof(UserId))]
     public User? User { get; set; }

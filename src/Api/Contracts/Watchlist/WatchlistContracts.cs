@@ -57,3 +57,12 @@ public sealed class NotificationQueryRequest
 public sealed record UnreadCountResponse(int Count);
 
 public sealed record MarkAllReadResponse(int MarkedCount);
+
+public sealed record DigestDto(
+    Guid Id,
+    int UserId,
+    string Frequency,
+    string Topic,
+    string Content,
+    int NewPapersCount,
+    DateTimeOffset CreatedAt);

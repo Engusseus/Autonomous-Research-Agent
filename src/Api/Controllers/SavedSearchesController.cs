@@ -3,6 +3,7 @@ using AutonomousResearchAgent.Api.Contracts.Common;
 using AutonomousResearchAgent.Api.Contracts.Watchlist;
 using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Application.Watchlist;
+using AutonomousResearchAgent.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,7 +11,9 @@ namespace AutonomousResearchAgent.Api.Controllers;
 
 [ApiController]
 [Route($"{ApiConstants.ApiPrefix}/saved-searches")]
-public sealed class SavedSearchesController(ISavedSearchService savedSearchService) : ControllerBase
+public sealed class SavedSearchesController(
+    ISavedSearchService savedSearchService,
+    IDigestService digestService) : ControllerBase
 {
     [HttpGet]
     [Authorize(Policy = PolicyNames.ReadAccess)]
@@ -20,7 +23,8 @@ public sealed class SavedSearchesController(ISavedSearchService savedSearchServi
         CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        var result = await savedSearchService.ListAsync(request.ToApplicationModel(userId), cancellationToken);
+        if (userId == null) return Unauthorized();
+        var result = await savedSearchService.ListAsync(request.ToApplicationModel(userId.Value), cancellationToken);
         return Ok(result.ToPagedResponse(item => item.ToDto()));
     }
 
@@ -43,7 +47,8 @@ public sealed class SavedSearchesController(ISavedSearchService savedSearchServi
         CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        var created = await savedSearchService.CreateAsync(request.ToApplicationModel(userId), cancellationToken);
+        if (userId == null) return Unauthorized();
+        var created = await savedSearchService.CreateAsync(request.ToApplicationModel(userId.Value), cancellationToken);
         return CreatedAtAction(nameof(GetSavedSearch), new { id = created.Id }, created.ToDto());
     }
 
@@ -79,6 +84,42 @@ public sealed class SavedSearchesController(ISavedSearchService savedSearchServi
     {
         var result = await savedSearchService.RunAsync(id, cancellationToken);
         return Ok(result.ToDto());
+    }
+
+    [HttpGet("~/api/watchlist/digests")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(typeof(IReadOnlyList<DigestDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<DigestDto>>> GetDigests(
+        [FromQuery] DigestFrequency? frequency,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        if (userId == null) return Unauthorized();
+
+        var digests = await digestService.GetDigestsForUserAsync(userId.Value, frequency, cancellationToken);
+        return Ok(digests.Select(d => d.ToDto()).ToList());
+    }
+
+    [HttpGet("digests/{digestId:guid}")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(typeof(DigestDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DigestDto>> GetDigest(Guid digestId, CancellationToken cancellationToken)
+    {
+        var digest = await digestService.GetByIdAsync(digestId, cancellationToken);
+        return digest != null ? Ok(digest.ToDto()) : NotFound();
+    }
+
+    [HttpGet("~/api/watchlist/digests/latest")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(typeof(DigestDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DigestDto>> GetLatestDigest([FromQuery] DigestFrequency frequency, CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        if (userId == null) return Unauthorized();
+
+        var digest = await digestService.GetLatestDigestAsync(userId.Value, frequency, cancellationToken);
+        return digest != null ? Ok(digest.ToDto()) : NotFound();
     }
 
     private int? GetUserId() => User.GetUserId();

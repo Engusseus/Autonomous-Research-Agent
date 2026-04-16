@@ -3,6 +3,7 @@ using AutonomousResearchAgent.Api.Contracts.Common;
 using AutonomousResearchAgent.Api.Contracts.Papers;
 using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Application.Citations;
+using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.Papers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,7 +28,7 @@ public sealed class PapersController(
     public async Task<ActionResult<PagedResponse<PaperListItemDto>>> GetPapers([FromQuery] PaperQueryRequest request, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        var result = await paperService.ListAsync(request.ToApplicationModel(), userId, cancellationToken);
+        var result = await paperService.ListAsync(request.ToApplicationModel(), userId is int i ? new Guid(i, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) : null, cancellationToken);
         return Ok(result.ToPagedResponse(item => item.ToDto()));
     }
 
@@ -38,7 +39,7 @@ public sealed class PapersController(
     public async Task<ActionResult<PaperDetailDto>> GetPaper(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        var paper = await paperService.GetByIdAsync(id, userId, cancellationToken);
+        var paper = await paperService.GetByIdAsync(id, null, cancellationToken);
         return Ok(paper.ToDto());
     }
 
@@ -123,6 +124,10 @@ public sealed class PapersController(
         return NoContent();
     }
 
-    private int? GetUserId() => User.GetUserId();
+    private int GetUserId()
+    {
+        var userId = User.GetUserId();
+        return userId ?? throw new AuthenticationException("User ID not found in token.");
+    }
 }
 

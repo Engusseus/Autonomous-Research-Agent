@@ -18,7 +18,7 @@ public sealed class ChatController(IChatService chatService, ILogger<ChatControl
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task Chat([FromBody] ChatRequest request, CancellationToken cancellationToken)
     {
-        Response.ContentType = "text/plain; charset=utf-8";
+        Response.ContentType = "text/event-stream";
         Response.StatusCode = 200;
 
         try
@@ -26,14 +26,50 @@ public sealed class ChatController(IChatService chatService, ILogger<ChatControl
             await foreach (var token in chatService.StreamChatAsync(request.Question, request.TopK, cancellationToken))
             {
                 if (cancellationToken.IsCancellationRequested) break;
-                var bytes = Encoding.UTF8.GetBytes(token);
+                var bytes = Encoding.UTF8.GetBytes($"data: {token}\n\n");
                 await Response.Body.WriteAsync(bytes, cancellationToken);
                 await Response.Body.FlushAsync(cancellationToken);
             }
+            var endBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
+            await Response.Body.WriteAsync(endBytes, cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error in streaming chat");
+            if (!Response.HasStarted)
+            {
+                Response.StatusCode = 500;
+            }
+        }
+    }
+
+    [HttpPost("with-tools")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task ChatWithTools([FromBody] ChatRequestWithToolsRequest request, CancellationToken cancellationToken)
+    {
+        Response.ContentType = "text/event-stream";
+        Response.StatusCode = 200;
+
+        try
+        {
+            var appRequest = new ChatRequestWithTools(request.Question, request.TopK, request.IncludeTools);
+            await foreach (var token in chatService.StreamChatWithToolsAsync(request.Question, request.TopK, request.IncludeTools, cancellationToken))
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+                var bytes = Encoding.UTF8.GetBytes($"data: {token}\n\n");
+                await Response.Body.WriteAsync(bytes, cancellationToken);
+                await Response.Body.FlushAsync(cancellationToken);
+            }
+            var endBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
+            await Response.Body.WriteAsync(endBytes, cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error in streaming chat with tools");
             if (!Response.HasStarted)
             {
                 Response.StatusCode = 500;
@@ -57,5 +93,27 @@ public sealed class ChatController(IChatService chatService, ILogger<ChatControl
             s.Score)).ToArray();
 
         return Ok(new ChatResponseDto(result.Answer, sources));
+    }
+
+    [HttpGet("sources/{chunkId:guid}/{paperId:guid}")]
+    [Authorize(Policy = PolicyNames.ReadAccess)]
+    [ProducesResponseType(typeof(SourceDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<SourceDetailDto>> GetSource(Guid chunkId, Guid paperId, CancellationToken cancellationToken)
+    {
+        var citation = await chatService.GetSourceAsync(chunkId, paperId, cancellationToken);
+
+        if (citation == null)
+        {
+            return NotFound();
+        }
+
+        return Ok(new SourceDetailDto(
+            citation.PaperId,
+            citation.ChunkId,
+            citation.ChunkText,
+            citation.Score,
+            citation.Position,
+            string.Empty));
     }
 }

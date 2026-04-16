@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Common;
 using AutonomousResearchAgent.Api.Contracts.Users;
@@ -72,6 +74,46 @@ public sealed class UsersController(IUserService userService) : ControllerBase
         var user = await userService.AssignRolesAsync(id, request.ToCommand(), cancellationToken);
         return Ok(user.ToDto());
     }
+
+    [HttpGet("api-keys")]
+    [Authorize]
+    [ProducesResponseType(typeof(IEnumerable<UserApiKeyDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IEnumerable<UserApiKeyDto>>> GetApiKeys(CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userId, out var id))
+            return Unauthorized();
+
+        var keys = await userService.GetApiKeysAsync(id, cancellationToken);
+        return Ok(keys.Select(k => k.ToDto()));
+    }
+
+    [HttpPost("api-keys")]
+    [Authorize]
+    [ProducesResponseType(typeof(UserApiKeyDto), StatusCodes.Status201Created)]
+    public async Task<ActionResult<UserApiKeyDto>> CreateApiKey([FromBody] CreateApiKeyRequest request, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userId, out var id))
+            return Unauthorized();
+
+        var (apiKey, keyHash) = await userService.CreateApiKeyAsync(id, request.Name, request.Permissions, request.ExpiresAt, cancellationToken);
+        return CreatedAtAction(nameof(GetApiKeys), new { id }, apiKey.ToDto(keyHash));
+    }
+
+    [HttpDelete("api-keys/{keyId:guid}")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult> DeleteApiKey(Guid keyId, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userId, out var id))
+            return Unauthorized();
+
+        await userService.DeleteApiKeyAsync(id, keyId, cancellationToken);
+        return NoContent();
+    }
 }
 
 public static class UserMappingExtensions
@@ -90,4 +132,10 @@ public static class UserMappingExtensions
 
     public static UserDto ToDto(this UserModel model) =>
         new(model.Id, model.Email, model.Username, model.IsActive, model.Roles, model.CreatedAt, model.UpdatedAt);
+
+    public static UserApiKeyDto ToDto(this UserApiKeyModel model) =>
+        new(model.Id, model.Name, model.Permissions, model.CreatedAt, model.ExpiresAt, model.LastUsedAt);
+
+    public static UserApiKeyDto ToDto(this UserApiKeyModel model, string rawKey) =>
+        new(model.Id, model.Name, model.Permissions, model.CreatedAt, model.ExpiresAt, model.LastUsedAt, rawKey);
 }

@@ -2,6 +2,7 @@ using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Collections;
 using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Application.Collections;
+using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.Export;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -187,5 +188,9 @@ public sealed class CollectionsController(
         return NoContent();
     }
 
-    private int? GetUserId() => User.GetUserId();
+    private int GetUserId()
+    {
+        var userId = User.GetUserId();
+        return userId ?? throw new AuthenticationException("User ID not found in token.");
+    }
 }

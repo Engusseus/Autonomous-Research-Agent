@@ -6,12 +6,27 @@ public sealed class ChatRequest
     public int TopK { get; init; } = 10;
 }
 
+public sealed class ChatRequestWithToolsRequest
+{
+    public string Question { get; init; } = string.Empty;
+    public int TopK { get; init; } = 10;
+    public bool IncludeTools { get; init; } = false;
+}
+
 public sealed record ChatSourceDto(
     Guid PaperId,
     string PaperTitle,
     Guid ChunkId,
     string ChunkText,
     double RelevanceScore);
+
+public sealed record SourceDetailDto(
+    Guid PaperId,
+    Guid ChunkId,
+    string ChunkText,
+    double Score,
+    int Position,
+    string PaperTitle);
 
 public sealed record ChatResponseDto(
     string Content,

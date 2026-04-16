@@ -2,6 +2,7 @@ using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Annotations;
 using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Application.Annotations;
+using AutonomousResearchAgent.Application.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -21,7 +22,7 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
         var userId = User.GetUserId();
         if (userId is null)
             return Unauthorized();
-        var annotations = await annotationService.ListForPaperAsync(paperId, userId.Value, cancellationToken);
+        var annotations = await annotationService.ListForPaperAsync(paperId, null, cancellationToken);
         return Ok(annotations.Select(a => new AnnotationResponse(
             a.Id,
             a.PaperId,
@@ -53,7 +54,7 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
 
         var command = new CreateAnnotationCommand(
             paperId,
-            userId.Value,
+            Guid.Empty,
             request.ChunkId,
             request.Page,
             request.OffsetStart,

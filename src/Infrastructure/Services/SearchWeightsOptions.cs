@@ -7,4 +7,5 @@ public sealed class SearchWeightsOptions
     public double Abstract { get; set; } = 0.6;
     public double Summary { get; set; } = 0.4;
     public double Document { get; set; } = 0.5;
+    public int RrfConstantK { get; set; } = 60;
 }

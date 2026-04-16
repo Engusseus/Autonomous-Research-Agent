@@ -134,14 +134,16 @@ public sealed class AuthService(
             throw new AuthenticationException("Refresh token has been revoked or expired.");
         }
 
+        var familyId = storedTokenHash.FamilyId ?? storedTokenHash.Id;
+
         dbContext.RefreshTokens.Remove(storedTokenHash);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var roles = user.UserRoles.Select(ur => ur.Role.Name).ToList();
-        var (accessToken, accessExpiresAt) = tokenService.GenerateAccessToken(user.Id, user.Email, roles);
+        var userRoles = user.UserRoles.Select(ur => ur.Role.Name).ToList();
+        var (accessToken, accessExpiresAt) = tokenService.GenerateAccessToken(user.Id, user.Email, userRoles);
         var (refreshToken, refreshExpiresAt) = tokenService.GenerateRefreshToken();
 
-        await SaveRefreshTokenAsync(user.Id, refreshToken, refreshExpiresAt, cancellationToken);
+        await SaveRefreshTokenAsync(user.Id, refreshToken, refreshExpiresAt, cancellationToken, familyId);
 
         logger.LogInformation("Token refreshed for user {UserId}", user.Id);
 
@@ -149,17 +151,70 @@ public sealed class AuthService(
             accessToken,
             refreshToken,
             accessExpiresAt,
-            new UserDto(user.Id, user.Email, user.Username, roles));
+            new UserDto(user.Id, user.Email, user.Username, userRoles));
     }
 
-    private async Task SaveRefreshTokenAsync(Guid userId, string refreshToken, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+    public async Task RevokeAllUserTokensAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var tokens = await dbContext.RefreshTokens
+            .Where(t => t.UserId == userId && !t.IsRevoked)
+            .ToListAsync(cancellationToken);
+
+        foreach (var token in tokens)
+        {
+            token.IsRevoked = true;
+            token.RevokedAt = DateTimeOffset.UtcNow;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Revoked all refresh tokens for user {UserId}", userId);
+    }
+
+    public async Task<bool> DetectCompromisedTokenAsync(string token, string currentIpAddress, CancellationToken cancellationToken)
+    {
+        var tokenHash = HashRefreshToken(token);
+        var storedToken = await dbContext.RefreshTokens
+            .FirstOrDefaultAsync(t => t.TokenHash == tokenHash, cancellationToken);
+
+        if (storedToken == null)
+            return false;
+
+        if (storedToken.IpAddress != null && storedToken.IpAddress != currentIpAddress)
+        {
+            logger.LogWarning("Potential compromised token detected for user {UserId}. Original IP: {OriginalIp}, Current IP: {CurrentIp}",
+                storedToken.UserId, storedToken.IpAddress, currentIpAddress);
+            return true;
+        }
+
+        return false;
+    }
+
+    public async Task RevokeRefreshTokenAsync(string token, CancellationToken cancellationToken)
+    {
+        var tokenHash = HashRefreshToken(token);
+        var storedToken = await dbContext.RefreshTokens
+            .FirstOrDefaultAsync(t => t.TokenHash == tokenHash, cancellationToken);
+
+        if (storedToken != null && !storedToken.IsRevoked)
+        {
+            storedToken.IsRevoked = true;
+            storedToken.RevokedAt = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Revoked refresh token for user {UserId}", storedToken.UserId);
+        }
+    }
+
+    private async Task SaveRefreshTokenAsync(Guid userId, string refreshToken, DateTimeOffset expiresAt, CancellationToken cancellationToken, Guid? familyId = null)
     {
         var tokenHash = HashRefreshToken(refreshToken);
         var storedToken = new RefreshToken
         {
             UserId = userId,
             TokenHash = tokenHash,
-            ExpiresAt = expiresAt
+            ExpiresAt = expiresAt,
+            FamilyId = familyId,
+            DeviceInfo = null,
+            IpAddress = null
         };
 
         dbContext.RefreshTokens.Add(storedToken);

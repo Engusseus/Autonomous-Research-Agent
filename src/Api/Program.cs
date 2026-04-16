@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using AutonomousResearchAgent.Api.Hubs;
 using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Api.Middleware;
 using AutonomousResearchAgent.Infrastructure.Extensions;
@@ -56,6 +57,7 @@ builder.Services.AddOpenTelemetry()
 builder.Services.AddApiLayer(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHealthAndOpenApi();
+builder.Services.AddSignalR();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
@@ -74,6 +76,7 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseMiddleware<AuditMiddleware>();
 if (app.Environment.IsDevelopment())
 {
     app.UseCors();
@@ -104,6 +107,7 @@ if (app.Environment.IsDevelopment())
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<JobStatusHub>("/hubs/jobs");
 app.MapHealthChecks("/health");
 app.MapOpenApi("/openapi/{documentName}.json");
 app.MapGet("/", () => Results.Redirect("/openapi/v1.json"));

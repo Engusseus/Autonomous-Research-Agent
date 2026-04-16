@@ -55,6 +55,15 @@ public sealed class EmbeddingIndexingService(
             }
 
             var vector = await embeddingClient.GenerateEmbeddingAsync(paper.Abstract.Trim(), cancellationToken);
+            var dimensions = vector.Length;
+
+            if (!_options.AllowVariableDimensions && dimensions != _options.VectorDimensions)
+            {
+                logger.LogWarning(
+                    "Embedding dimension mismatch for paper {PaperId}: expected {Expected}, got {Actual}",
+                    paper.Id, _options.VectorDimensions, dimensions);
+                continue;
+            }
 
             if (existing is null)
             {
@@ -63,13 +72,15 @@ public sealed class EmbeddingIndexingService(
                     PaperId = paper.Id,
                     EmbeddingType = EmbeddingType.PaperAbstract,
                     ModelName = _options.ModelName,
-                    Vector = vector
+                    Vector = vector,
+                    VectorDimensions = dimensions
                 });
             }
             else
             {
                 existing.ModelName = _options.ModelName;
                 existing.Vector = vector;
+                existing.VectorDimensions = dimensions;
             }
         }
 
@@ -124,6 +135,15 @@ public sealed class EmbeddingIndexingService(
             }
 
             var vector = await embeddingClient.GenerateEmbeddingAsync(chunk.Text.Trim(), cancellationToken);
+            var dimensions = vector.Length;
+
+            if (!_options.AllowVariableDimensions && dimensions != _options.VectorDimensions)
+            {
+                logger.LogWarning(
+                    "Embedding dimension mismatch for chunk {ChunkId}: expected {Expected}, got {Actual}",
+                    chunk.Id, _options.VectorDimensions, dimensions);
+                continue;
+            }
 
             if (existing is null)
             {
@@ -133,7 +153,8 @@ public sealed class EmbeddingIndexingService(
                     DocumentChunkId = chunk.Id,
                     EmbeddingType = EmbeddingType.DocumentChunk,
                     ModelName = _options.ModelName,
-                    Vector = vector
+                    Vector = vector,
+                    VectorDimensions = dimensions
                 });
             }
             else
@@ -143,6 +164,7 @@ public sealed class EmbeddingIndexingService(
                 existing.EmbeddingType = EmbeddingType.DocumentChunk;
                 existing.ModelName = _options.ModelName;
                 existing.Vector = vector;
+                existing.VectorDimensions = dimensions;
             }
         }
 
@@ -184,6 +206,15 @@ public sealed class EmbeddingIndexingService(
         }
 
         var vector = await embeddingClient.GenerateEmbeddingAsync(content.Trim(), cancellationToken);
+        var dimensions = vector.Length;
+
+        if (!_options.AllowVariableDimensions && dimensions != _options.VectorDimensions)
+        {
+            logger.LogWarning(
+                "Embedding dimension mismatch for {EmbeddingType} {TargetId}: expected {Expected}, got {Actual}",
+                embeddingType, paperId ?? summaryId ?? documentChunkId, _options.VectorDimensions, dimensions);
+            return;
+        }
 
         if (existing is null)
         {
@@ -192,7 +223,8 @@ public sealed class EmbeddingIndexingService(
                 PaperId = paperId,
                 SummaryId = summaryId,
                 DocumentChunkId = documentChunkId,
-                EmbeddingType = embeddingType
+                EmbeddingType = embeddingType,
+                VectorDimensions = dimensions
             };
             dbContext.PaperEmbeddings.Add(existing);
         }
@@ -203,6 +235,7 @@ public sealed class EmbeddingIndexingService(
         existing.EmbeddingType = embeddingType;
         existing.ModelName = _options.ModelName;
         existing.Vector = vector;
+        existing.VectorDimensions = dimensions;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Upserted embedding for {EmbeddingType} {TargetId}", embeddingType, paperId ?? summaryId ?? documentChunkId);
@@ -229,6 +262,15 @@ public sealed class EmbeddingIndexingService(
         }
 
         var vector = await embeddingClient.GenerateEmbeddingAsync(chunk.Text.Trim(), cancellationToken);
+        var dimensions = vector.Length;
+
+        if (!_options.AllowVariableDimensions && dimensions != _options.VectorDimensions)
+        {
+            logger.LogWarning(
+                "Embedding dimension mismatch for DocumentChunk {ChunkId}: expected {Expected}, got {Actual}",
+                chunk.Id, _options.VectorDimensions, dimensions);
+            return;
+        }
 
         if (existing is null)
         {
@@ -236,7 +278,8 @@ public sealed class EmbeddingIndexingService(
             {
                 PaperId = chunk.PaperDocument?.PaperId ?? chunk.PaperDocumentId,
                 DocumentChunkId = chunk.Id,
-                EmbeddingType = EmbeddingType.DocumentChunk
+                EmbeddingType = EmbeddingType.DocumentChunk,
+                VectorDimensions = dimensions
             };
             dbContext.PaperEmbeddings.Add(existing);
         }
@@ -246,6 +289,7 @@ public sealed class EmbeddingIndexingService(
         existing.EmbeddingType = EmbeddingType.DocumentChunk;
         existing.ModelName = _options.ModelName;
         existing.Vector = vector;
+        existing.VectorDimensions = dimensions;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Upserted embedding for DocumentChunk {ChunkId}", chunk.Id);

@@ -39,6 +39,32 @@ public sealed class AuthController(IAuthService authService) : ControllerBase
         var result = await authService.RefreshTokenAsync(request.ToCommand(), cancellationToken);
         return Ok(result.ToResponse());
     }
+
+    [HttpPost("logout")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult> Logout(CancellationToken cancellationToken)
+    {
+        var refreshToken = Request.Headers["X-Refresh-Token"].FirstOrDefault();
+        if (!string.IsNullOrEmpty(refreshToken))
+        {
+            await authService.RevokeRefreshTokenAsync(refreshToken, cancellationToken);
+        }
+        return NoContent();
+    }
+
+    [HttpPost("revoke-all-tokens")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult> RevokeAllTokens(CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (Guid.TryParse(userId, out var id))
+        {
+            await authService.RevokeAllUserTokensAsync(id, cancellationToken);
+        }
+        return NoContent();
+    }
 }
 
 public static class AuthMappingExtensions

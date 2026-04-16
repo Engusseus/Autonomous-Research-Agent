@@ -1,8 +1,10 @@
-import { getJobs, getJob, retryJob, escapeHtml } from '../api.js';
+import { getJobs, getJob, retryJob, escapeHtml, getConfig } from '../api.js';
 import {
   h, clear, loading, badge, pagination, timeAgo, formatDateTime,
   jsonBlock, toast, emptyState
 } from '../components.js';
+import { connectToJobStatusHub, JobStatusClient } from '../signalr-client.js';
+import { store } from '../store.js';
 
 let currentParams = {
   pageNumber: 1,
@@ -11,8 +13,9 @@ let currentParams = {
   status: '',
 };
 
-let pollingTimer = null;
 let isTabVisible = true;
+let pollingTimer = null;
+let unsubscribeSignalR = null;
 
 export async function render(container, { navigate, params }) {
   // Job detail view
@@ -86,12 +89,29 @@ export async function render(container, { navigate, params }) {
 
   loadTable();
 
-  // Auto-refresh when Running jobs exist
-  isTabVisible = !document.hidden;
+  const { baseUrl } = getConfig();
+  setupSignalR(baseUrl);
+
+  async function setupSignalR(baseUrl) {
+    try {
+      unsubscribeSignalR = JobStatusClient.onJobCompleted((job) => {
+        if (currentParams.status === '' ||
+            currentParams.status === 'Completed' ||
+            currentParams.status === 'Running') {
+          loadTable();
+        }
+        store.setSlice('jobs', { currentJob: job });
+      });
+      await connectToJobStatusHub(baseUrl);
+    } catch (err) {
+      console.warn('SignalR connection failed, falling back to polling', err.message);
+      startPolling();
+    }
+  }
+
   document.addEventListener('visibilitychange', () => {
     isTabVisible = !document.hidden;
   });
-  startPolling();
 
   async function loadTable() {
     const tc = document.getElementById('jobs-table-container');
@@ -200,6 +220,14 @@ function stopPolling() {
   if (pollingTimer) {
     clearInterval(pollingTimer);
     pollingTimer = null;
+  }
+}
+
+export function cleanup() {
+  stopPolling();
+  if (unsubscribeSignalR) {
+    unsubscribeSignalR();
+    unsubscribeSignalR = null;
   }
 }
 

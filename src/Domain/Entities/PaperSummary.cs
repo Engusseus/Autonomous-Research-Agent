@@ -24,4 +24,6 @@ public sealed class PaperSummary : AuditableEntity
     public AbTestSession? AbTestSession { get; set; }
 
     public ICollection<PaperEmbedding> Embeddings { get; set; } = [];
+
+    public string? SearchVector { get; set; }
 }

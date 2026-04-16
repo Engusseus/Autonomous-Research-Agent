@@ -39,6 +39,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<PaperTag> PaperTags => Set<PaperTag>();
     public DbSet<AbTestSession> AbTestSessions => Set<AbTestSession>();
     public DbSet<ResearchGoalTemplate> ResearchGoalTemplates => Set<ResearchGoalTemplate>();
+    public DbSet<DeadLetterJob> DeadLetterJobs => Set<DeadLetterJob>();
+    public DbSet<UserApiKey> UserApiKeys => Set<UserApiKey>();
+    public DbSet<Digest> Digests => Set<Digest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -59,13 +62,25 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         if (Database.ProviderName != "Npgsql.EntityFrameworkCore.PostgreSQL")
         {
             modelBuilder.Entity<PaperEmbedding>().Ignore(x => x.Vector);
+            modelBuilder.Entity<PaperEmbedding>().Ignore(x => x.VectorDimensions);
         }
+
+        modelBuilder.Entity<PaperEmbedding>().Property(e => e.VectorDimensions).HasColumnType("integer");
 
         modelBuilder.Entity<Tag>().HasIndex(t => t.Name);
         modelBuilder.Entity<Tag>().HasIndex(t => new { t.Name, t.UserId }).IsUnique();
 
         modelBuilder.Entity<PaperTag>().HasIndex(pt => pt.Tag);
         modelBuilder.Entity<PaperTag>().HasIndex(pt => new { pt.Tag, pt.PaperId, pt.UserId }).IsUnique();
+
+        modelBuilder.Entity<Paper>()
+            .Ignore(p => p.SearchVector);
+
+        modelBuilder.Entity<PaperSummary>()
+            .Ignore(s => s.SearchVector);
+
+        modelBuilder.Entity<PaperDocument>()
+            .Ignore(d => d.SearchVector);
 
         modelBuilder.Entity<PaperTag>()
             .HasOne(pt => pt.Paper)
