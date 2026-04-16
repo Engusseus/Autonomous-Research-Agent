@@ -569,7 +569,7 @@ confidence: number
         {
             try
             {
-            var paper = await paperService.GetByIdAsync(paperId, null, cancellationToken);
+                var paper = await paperService.GetByIdAsync(paperId, null, cancellationToken);
                 var summary = await summarizationService.GenerateSummaryAsync(paper, _options.Model, _summaryOptions.DefaultPromptVersion, cancellationToken);
 
                 await summaryService.CreateAsync(

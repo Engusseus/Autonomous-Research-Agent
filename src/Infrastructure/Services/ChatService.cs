@@ -69,14 +69,14 @@ Format your response with proper paragraphs and structure.";
         };
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            logger.LogError("OpenRouter returned {StatusCode}. Body: {Body}", response.StatusCode, errorBody);
+            logger.LogError("OpenRouter returned {StatusCode}. Body: {Body}", response.StatusCode, responseBody);
             throw new ExternalDependencyException($"OpenRouter returned {response.StatusCode}.");
         }
 
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        using var document = JsonDocument.Parse(responseBody);
         var content = document.RootElement
             .GetProperty("choices")[0]
             .GetProperty("message")

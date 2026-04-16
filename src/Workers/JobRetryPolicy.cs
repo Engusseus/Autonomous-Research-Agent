@@ -15,7 +15,9 @@ public sealed class JobRetryPolicy
 
     public TimeSpan GetDelayForAttempt(int attempt)
     {
-        var delaySeconds = Math.Min(Math.Pow(2, attempt) * BaseDelay, MaxDelay);
+        var baseDelaySeconds = Math.Pow(2, attempt) * BaseDelay;
+        var jitter = Random.Shared.NextDouble() * baseDelaySeconds * 0.3;
+        var delaySeconds = Math.Min(baseDelaySeconds + jitter, MaxDelay);
         return TimeSpan.FromSeconds(delaySeconds);
     }
 
@@ -30,10 +32,11 @@ public sealed class JobRetryPolicy
         {
             HttpRequestException httpEx when httpEx.StatusCode == System.Net.HttpStatusCode.TooManyRequests => true,
             HttpRequestException httpEx when httpEx.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable => true,
-            TaskCanceledException => true,
+            HttpRequestException httpEx when httpEx.StatusCode == System.Net.HttpStatusCode.GatewayTimeout => true,
+            HttpRequestException httpEx when httpEx.StatusCode == System.Net.HttpStatusCode.BadGateway => true,
             OperationCanceledException => false,
             InvalidOperationException => false,
-            _ => currentAttempt < 3
+            _ => true
         };
     }
 

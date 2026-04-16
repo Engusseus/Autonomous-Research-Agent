@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace AutonomousResearchAgent.Api.Middleware;
@@ -17,10 +18,12 @@ public sealed class AuditedAttribute : Attribute
 public sealed class AuditMiddleware
 {
     private readonly RequestDelegate _next;
+    private readonly ILogger<AuditMiddleware> _logger;
 
-    public AuditMiddleware(RequestDelegate next)
+    public AuditMiddleware(RequestDelegate next, ILogger<AuditMiddleware> logger)
     {
         _next = next;
+        _logger = logger;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -54,8 +57,10 @@ public sealed class AuditMiddleware
                 {
                     await auditService.LogAuditEventAsync(auditCommand, CancellationToken.None);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    _logger.LogWarning(ex, "Failed to write audit log for {UserId} {Action} {Path}",
+                        auditCommand.UserId, auditCommand.Action, auditCommand.EntityType);
                 }
             }
         }

@@ -20,7 +20,11 @@ public sealed class DatabaseHealthCheck : IStartupFilter
                     throw new InvalidOperationException("Unable to connect to the database. Please check your database connection string and ensure the database server is running.");
                 }
             }
-            catch (Exception ex) when (ex is not InvalidOperationException)
+            catch (InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 throw new InvalidOperationException($"Unable to connect to the database: {ex.Message}", ex);
             }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Authorization;
 
@@ -6,18 +7,18 @@ namespace AutonomousResearchAgent.Api.Hubs;
 [Authorize]
 public class JobStatusHub : Hub
 {
-    private static readonly Dictionary<string, HashSet<string>> _userConnections = new();
+    private static readonly ConcurrentDictionary<string, HashSet<string>> _userConnections = new();
 
     public override async Task OnConnectedAsync()
     {
         var userId = Context.UserIdentifier;
         if (!string.IsNullOrEmpty(userId))
         {
-            if (!_userConnections.ContainsKey(userId))
+            var connections = _userConnections.GetOrAdd(userId, _ => new HashSet<string>());
+            lock (connections)
             {
-                _userConnections[userId] = new HashSet<string>();
+                connections.Add(Context.ConnectionId);
             }
-            _userConnections[userId].Add(Context.ConnectionId);
         }
 
         await base.OnConnectedAsync();
@@ -28,12 +29,15 @@ public class JobStatusHub : Hub
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var userId = Context.UserIdentifier;
-        if (!string.IsNullOrEmpty(userId) && _userConnections.ContainsKey(userId))
+        if (!string.IsNullOrEmpty(userId) && _userConnections.TryGetValue(userId, out var connections))
         {
-            _userConnections[userId].Remove(Context.ConnectionId);
-            if (_userConnections[userId].Count == 0)
+            lock (connections)
             {
-                _userConnections.Remove(userId);
+                connections.Remove(Context.ConnectionId);
+                if (connections.Count == 0)
+                {
+                    _userConnections.TryRemove(userId, out _);
+                }
             }
         }
 

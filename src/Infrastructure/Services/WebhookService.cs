@@ -34,6 +34,11 @@ public sealed class WebhookService(
 
     public async Task<WebhookDetail> CreateAsync(CreateWebhookCommand command, CancellationToken cancellationToken)
     {
+        if (!IsValidWebhookUrl(command.Url))
+        {
+            throw new ArgumentException("Webhook URL must be a valid HTTPS URL and cannot point to internal or private networks.", nameof(command));
+        }
+
         var secret = GenerateSecret();
         var webhook = new UserWebhook
         {
@@ -87,6 +92,12 @@ public sealed class WebhookService(
 
     private async Task DeliverToWebhookAsync(UserWebhook webhook, string jsonPayload, CancellationToken cancellationToken)
     {
+        if (!IsValidWebhookUrl(webhook.Url))
+        {
+            logger.LogWarning("Invalid webhook URL {Url} for webhook {WebhookId}, skipping delivery", webhook.Url, webhook.Id);
+            return;
+        }
+
         var client = httpClientFactory.CreateClient("Webhooks");
         var signature = ComputeHmacSignature(jsonPayload, webhook.Secret);
         const int maxRetries = 3;
@@ -95,6 +106,9 @@ public sealed class WebhookService(
         {
             try
             {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(TimeSpan.FromSeconds(30));
+
                 var request = new HttpRequestMessage(HttpMethod.Post, webhook.Url)
                 {
                     Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
@@ -102,7 +116,7 @@ public sealed class WebhookService(
                 request.Headers.Add("X-Webhook-Signature", signature);
                 request.Headers.Add("X-Webhook-Id", webhook.Id.ToString());
 
-                var response = await client.SendAsync(request, cancellationToken);
+                var response = await client.SendAsync(request, cts.Token);
                 if (response.IsSuccessStatusCode)
                 {
                     logger.LogDebug("Delivered webhook {WebhookId} to {Url}", webhook.Id, webhook.Url);
@@ -150,6 +164,44 @@ public sealed class WebhookService(
         using var hmac = new HMACSHA256(keyBytes);
         var hash = hmac.ComputeHash(payloadBytes);
         return $"sha256={Convert.ToHexString(hash).ToLowerInvariant()}";
+    }
+
+    private static readonly char[] s_invalidFileNameChars = new[]
+    {
+        '<', '>', ':', '"', '/', '\\', '|', '?', '*', '\0'
+    };
+
+    private static bool IsValidWebhookUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+
+        if (uri.Scheme != "https" && !uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (IPAddress.TryParse(uri.Host, out var ip))
+        {
+            if (IPAddress.IsLoopback(ip)) return true;
+            if (IsPrivateIp(ip)) return false;
+        }
+
+        var blockedHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254",
+            "metadata.google.internal", "metadata.internal"
+        };
+        if (blockedHosts.Contains(uri.Host))
+            return false;
+
+        return true;
+    }
+
+    private static bool IsPrivateIp(IPAddress ip)
+    {
+        var bytes = ip.GetAddressBytes();
+        return bytes[0] == 10 ||
+               (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+               (bytes[0] == 192 && bytes[1] == 168);
     }
 
     private static string GenerateSecret()

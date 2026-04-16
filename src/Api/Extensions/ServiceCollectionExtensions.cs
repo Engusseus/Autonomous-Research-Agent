@@ -208,6 +208,17 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    private static string GetPartitionKey(HttpContext context) =>
-        context.User.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+    private static string GetPartitionKey(HttpContext context)
+    {
+        if (context.User.Identity?.IsAuthenticated == true)
+        {
+            var userId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                return "user:" + userId;
+            }
+        }
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+        return "ip:" + ip;
+    }
 }

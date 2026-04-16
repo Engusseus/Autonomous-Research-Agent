@@ -68,7 +68,17 @@ builder.Services.AddCors(options =>
         }
         else
         {
-            policy.SetPreflightMaxAge(TimeSpan.FromHours(1));
+            var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? [];
+            if (allowedOrigins.Length == 0 || allowedOrigins.Contains("*"))
+            {
+                policy.SetIsOriginAllowed(_ => true);
+            }
+            else
+            {
+                policy.WithOrigins(allowedOrigins)
+                      .AllowAnyHeader()
+                      .AllowAnyMethod();
+            }
         }
     });
 });
@@ -88,7 +98,7 @@ app.UseSwaggerUI();
 
 app.UseAuthentication();
 app.UseRateLimiter();
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() && Environment.GetEnvironmentVariable("ENABLE_DEV_AUTH") == "true")
 {
     app.Use(async (context, next) =>
     {
