@@ -2,6 +2,7 @@ using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Common;
 using AutonomousResearchAgent.Api.Contracts.Papers;
 using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Api.Middleware;
 using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.Duplicates;
 using Microsoft.AspNetCore.Authorization;
@@ -38,6 +39,7 @@ public sealed class DuplicateDetectionController(IDuplicateDetectionService dupl
     }
 
     [HttpPut("{id:guid}/resolve")]
+    [Audited]
     [Authorize(Policy = PolicyNames.AdminAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -60,6 +62,7 @@ public sealed class DuplicateDetectionController(IDuplicateDetectionService dupl
     }
 
     [HttpPost("{id:guid}/merge")]
+    [Audited]
     [Authorize(Policy = PolicyNames.AdminAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -81,6 +84,7 @@ public sealed class DuplicateDetectionController(IDuplicateDetectionService dupl
     }
 
     [HttpPost("detect")]
+    [Audited]
     [Authorize(Policy = PolicyNames.AdminAccess)]
     [ProducesResponseType(typeof(Guid), StatusCodes.Status202Accepted)]
     public async Task<ActionResult<Guid>> StartDuplicateDetection(

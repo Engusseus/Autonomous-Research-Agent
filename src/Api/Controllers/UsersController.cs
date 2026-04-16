@@ -4,6 +4,7 @@ using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Common;
 using AutonomousResearchAgent.Api.Contracts.Users;
 using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Api.Middleware;
 using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.Users;
 using Microsoft.AspNetCore.Authorization;
@@ -35,6 +36,7 @@ public sealed class UsersController(IUserService userService) : ControllerBase
     }
 
     [HttpPost]
+    [Audited]
     [Authorize(Policy = PolicyNames.AdminAccess)]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -45,6 +47,7 @@ public sealed class UsersController(IUserService userService) : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.AdminAccess)]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -56,6 +59,7 @@ public sealed class UsersController(IUserService userService) : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.AdminAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -66,6 +70,7 @@ public sealed class UsersController(IUserService userService) : ControllerBase
     }
 
     [HttpPost("{id:guid}/roles")]
+    [Audited]
     [Authorize(Policy = PolicyNames.AdminAccess)]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -89,6 +94,7 @@ public sealed class UsersController(IUserService userService) : ControllerBase
     }
 
     [HttpPost("api-keys")]
+    [Audited]
     [Authorize]
     [ProducesResponseType(typeof(UserApiKeyDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<UserApiKeyDto>> CreateApiKey([FromBody] CreateApiKeyRequest request, CancellationToken cancellationToken)
@@ -102,6 +108,7 @@ public sealed class UsersController(IUserService userService) : ControllerBase
     }
 
     [HttpDelete("api-keys/{keyId:guid}")]
+    [Audited]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

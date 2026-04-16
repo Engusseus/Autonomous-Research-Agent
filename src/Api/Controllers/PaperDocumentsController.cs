@@ -1,6 +1,7 @@
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Documents;
 using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Api.Middleware;
 using AutonomousResearchAgent.Application.Documents;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -32,6 +33,7 @@ public sealed class PaperDocumentsController(IPaperDocumentService paperDocument
     }
 
     [HttpPost]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(PaperDocumentDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -43,6 +45,7 @@ public sealed class PaperDocumentsController(IPaperDocumentService paperDocument
     }
 
     [HttpPost("{documentId:guid}/queue-processing")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(PaperDocumentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -54,6 +57,7 @@ public sealed class PaperDocumentsController(IPaperDocumentService paperDocument
     }
 
     [HttpDelete("{documentId:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

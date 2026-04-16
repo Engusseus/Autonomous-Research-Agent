@@ -60,15 +60,11 @@ public sealed class PaperDocumentService(
             MediaType = string.IsNullOrWhiteSpace(command.MediaType) ? null : command.MediaType.Trim(),
             RequiresOcr = command.RequiresOcr,
             MetadataJson = JsonNodeMapper.Serialize(command.Metadata),
-            Status = PaperDocumentStatus.Queued
+            Status = PaperDocumentStatus.Pending
         };
 
         dbContext.PaperDocuments.Add(entity);
         await dbContext.SaveChangesAsync(cancellationToken);
-
-        await jobService.CreateAsync(
-            new CreateJobCommand(JobType.ProcessPaperDocument, PaperDocumentJobPayload.Create(entity), entity.Id, null),
-            cancellationToken);
 
         logger.LogInformation("Created paper document {DocumentId} for paper {PaperId}", entity.Id, entity.PaperId);
         return entity.ToModel();

@@ -2,6 +2,7 @@ using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Common;
 using AutonomousResearchAgent.Api.Contracts.ReadingSessions;
 using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Api.Middleware;
 using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.ReadingSessions;
 using Microsoft.AspNetCore.Authorization;
@@ -49,6 +50,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
     }
 
     [HttpPost("reading-list")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(ReadingSessionResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -65,6 +67,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
     }
 
     [HttpPut("reading-list/{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(ReadingSessionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -86,6 +89,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
     }
 
     [HttpDelete("reading-list/{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

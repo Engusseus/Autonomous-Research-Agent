@@ -310,7 +310,6 @@ WHERE ""Id"" = (
         }
 
         var fallbackJob = await dbContext.Jobs
-            .OrderBy(j => j.CreatedAt)
             .FirstOrDefaultAsync(j => j.Status == JobStatus.Queued, cancellationToken);
 
         if (fallbackJob is null)
@@ -318,22 +317,10 @@ WHERE ""Id"" = (
             return null;
         }
 
-        var updatedRows = await dbContext.Jobs
-            .Where(j => j.Id == fallbackJob.Id && j.Status == JobStatus.Queued)
-            .ExecuteUpdateAsync(j => j
-                .SetProperty(p => p.Status, JobStatus.Running)
-                .SetProperty(p => p.ErrorMessage, (string?)null)
-                .SetProperty(p => p.CancellationRequestedAt, (DateTimeOffset?)null),
-                cancellationToken);
-
-        if (updatedRows == 0)
-        {
-            return null;
-        }
-
         fallbackJob.Status = JobStatus.Running;
         fallbackJob.ErrorMessage = null;
         fallbackJob.CancellationRequestedAt = null;
+        await dbContext.SaveChangesAsync(cancellationToken);
         return fallbackJob;
     }
 

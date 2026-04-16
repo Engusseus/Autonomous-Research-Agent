@@ -108,12 +108,11 @@ public sealed class PaperDocumentProcessingService(
             document.LastError = null;
 
             var nativeText = await _textExtractor.ExtractAsync(bytes, mediaType, fileName, cancellationToken);
-            if (string.IsNullOrWhiteSpace(nativeText))
+            var shouldRunOcr = document.RequiresOcr || IsTooWeak(nativeText);
+            if (!shouldRunOcr && string.IsNullOrWhiteSpace(nativeText))
             {
                 throw new InvalidStateException("Text extraction produced no content.");
             }
-
-            var shouldRunOcr = document.RequiresOcr || IsTooWeak(nativeText);
             if (shouldRunOcr)
             {
                 var ocrText = await ExtractWithOcrAsync(targetPath, cancellationToken);

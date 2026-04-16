@@ -35,6 +35,4 @@ public sealed class PaperDocument : AuditableEntity
     public Paper Paper { get; set; } = null!;
 
     public ICollection<DocumentChunk> Chunks { get; set; } = [];
-
-    public string? SearchVector { get; set; }
 }

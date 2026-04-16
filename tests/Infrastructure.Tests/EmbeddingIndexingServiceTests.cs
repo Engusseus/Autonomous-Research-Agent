@@ -106,7 +106,7 @@ public sealed class EmbeddingIndexingServiceTests
 
     private static EmbeddingIndexingService CreateService(ApplicationDbContext dbContext, ILocalEmbeddingClient embeddingClient)
     {
-        var options = Options.Create(new LocalEmbeddingOptions { ModelName = "local-model" });
+        var options = Options.Create(new LocalEmbeddingOptions { ModelName = "local-model", VectorDimensions = 3 });
         return new EmbeddingIndexingService(dbContext, embeddingClient, options, NullLogger<EmbeddingIndexingService>.Instance);
     }
 

@@ -1,6 +1,7 @@
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Annotations;
 using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Api.Middleware;
 using AutonomousResearchAgent.Application.Annotations;
 using AutonomousResearchAgent.Application.Common;
 using Microsoft.AspNetCore.Authorization;
@@ -39,6 +40,7 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
     }
 
     [HttpPost("papers/{paperId:guid}/annotations")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(AnnotationResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -102,6 +104,7 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
     }
 
     [HttpPut("annotations/{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(AnnotationResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -128,6 +131,7 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
     }
 
     [HttpDelete("annotations/{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

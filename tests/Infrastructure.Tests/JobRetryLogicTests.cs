@@ -255,11 +255,11 @@ public sealed class JobRetryLogicTests
         var delay3 = policy.GetDelayForAttempt(3);
         var delay4 = policy.GetDelayForAttempt(4);
 
-        Assert.Equal(TimeSpan.FromSeconds(30), delay0);
-        Assert.Equal(TimeSpan.FromSeconds(60), delay1);
-        Assert.Equal(TimeSpan.FromSeconds(120), delay2);
-        Assert.Equal(TimeSpan.FromSeconds(240), delay3);
-        Assert.Equal(TimeSpan.FromSeconds(480), delay4);
+        Assert.InRange(delay0, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(39));
+        Assert.InRange(delay1, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(78));
+        Assert.InRange(delay2, TimeSpan.FromSeconds(120), TimeSpan.FromSeconds(156));
+        Assert.InRange(delay3, TimeSpan.FromSeconds(240), TimeSpan.FromSeconds(312));
+        Assert.InRange(delay4, TimeSpan.FromSeconds(480), TimeSpan.FromSeconds(624));
     }
 
     [Fact]

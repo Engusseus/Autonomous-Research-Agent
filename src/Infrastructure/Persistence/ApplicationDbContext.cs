@@ -73,15 +73,6 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         modelBuilder.Entity<PaperTag>().HasIndex(pt => pt.Tag);
         modelBuilder.Entity<PaperTag>().HasIndex(pt => new { pt.Tag, pt.PaperId, pt.UserId }).IsUnique();
 
-        modelBuilder.Entity<Paper>()
-            .Ignore(p => p.SearchVector);
-
-        modelBuilder.Entity<PaperSummary>()
-            .Ignore(s => s.SearchVector);
-
-        modelBuilder.Entity<PaperDocument>()
-            .Ignore(d => d.SearchVector);
-
         modelBuilder.Entity<PaperTag>()
             .HasOne(pt => pt.Paper)
             .WithMany(p => p.PaperTags)

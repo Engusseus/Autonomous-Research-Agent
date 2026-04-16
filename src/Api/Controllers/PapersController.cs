@@ -2,6 +2,7 @@ using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Common;
 using AutonomousResearchAgent.Api.Contracts.Papers;
 using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Api.Middleware;
 using AutonomousResearchAgent.Application.Citations;
 using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.Papers;
@@ -47,6 +48,7 @@ public sealed class PapersController(
     /// Creates a paper record manually.
     /// </summary>
     [HttpPost]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(PaperDetailDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -60,6 +62,7 @@ public sealed class PapersController(
     /// Updates editable paper metadata.
     /// </summary>
     [HttpPatch("{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(PaperDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -74,6 +77,7 @@ public sealed class PapersController(
     /// Imports papers synchronously via the Semantic Scholar integration.
     /// </summary>
     [HttpPost("import")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [EnableRateLimiting(RateLimiterPolicyNames.Expensive)]
     [ProducesResponseType(typeof(ImportPapersResponse), StatusCodes.Status200OK)]
@@ -88,6 +92,7 @@ public sealed class PapersController(
     /// Deletes a paper by its internal identifier.
     /// </summary>
     [HttpDelete("{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -114,6 +119,7 @@ public sealed class PapersController(
     /// Ingests citations for a paper from Semantic Scholar.
     /// </summary>
     [HttpPost("{id:guid}/ingest-citations")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [EnableRateLimiting(RateLimiterPolicyNames.Expensive)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

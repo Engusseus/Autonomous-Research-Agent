@@ -138,8 +138,32 @@ src/
 
 - .NET 9 SDK
 - PostgreSQL 15+ with pgvector extension
-- `ocrmypdf` available on the machine for PDF OCR fallback
+- `ocrmypdf` for PDF OCR fallback
 - Python 3.11+ for the local embedding service
+
+### Installing ocrmypdf
+
+`ocrmypdf` is required for PDF OCR when native PDF text extraction is insufficient.
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install ocrmypdf
+```
+
+**macOS:**
+```bash
+brew install ocrmypdf
+```
+
+**Python package (alternative):**
+```bash
+pip install ocrmypdf
+```
+
+Verify installation:
+```bash
+ocrmypdf --version
+```
 
 ### Local database setup
 
@@ -340,4 +364,3 @@ Tests use `appsettings.Testing.json` in the test projects. Default connection as
 ## Notes
 
 - The current code is intentionally realistic but lightweight: it is a strong v1 foundation, not a finished production system.
-- This environment did not have the .NET SDK installed while generating the repository, so the structure was authored to be restore/build-ready but was not compiled in-place here.

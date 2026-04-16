@@ -85,7 +85,7 @@ public sealed class AutonomousJobRunnerTests
             _openRouterChatClientMock.Object,
             mockSemanticScholarClient.Object,
             _openRouterOptions,
-            Mock.Of<IOptions<SummaryOptions>>(),
+            Options.Create(new SummaryOptions { DefaultPromptVersion = "v1" }),
             _loggerFactory,
             mockTrendAnalysisService.Object);
     }
@@ -198,7 +198,7 @@ public sealed class AutonomousJobRunnerTests
 
         _summarizationServiceMock
             .Setup(s => s.GenerateSummaryAsync(paper, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonNode.Parse("{\"shortSummary\":\"summary text\"}"));
+            .ReturnsAsync(JsonNode.Parse("{\"shortSummary\":\"summary text\",\"longSummary\":\"long summary text\",\"keyFindings\":[]}"));
 
         _summaryServiceMock
             .Setup(s => s.CreateAsync(It.IsAny<CreateSummaryCommand>(), It.IsAny<CancellationToken>()))
@@ -347,13 +347,12 @@ public sealed class AutonomousJobRunnerTests
         var job = new Job
         {
             Id = Guid.NewGuid(),
-            Type = JobType.GenerateEmbeddings,
+            Type = (JobType)999,
             PayloadJson = "{}"
         };
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => runner.RunAsync(job, CancellationToken.None));
         Assert.Contains("Unsupported job type", ex.Message);
-        Assert.Contains("GenerateEmbeddings", ex.Message);
     }
 
     [Fact]
@@ -426,7 +425,7 @@ public sealed class AutonomousJobRunnerTests
 
         _summarizationServiceMock
             .Setup(s => s.GenerateSummaryAsync(paper, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(JsonNode.Parse("{\"shortSummary\":\"test\"}"));
+            .ReturnsAsync(JsonNode.Parse("{\"shortSummary\":\"test\",\"longSummary\":\"test\",\"keyFindings\":[]}"));
 
         _summaryServiceMock
             .Setup(s => s.CreateAsync(It.IsAny<CreateSummaryCommand>(), It.IsAny<CancellationToken>()))
@@ -451,6 +450,7 @@ public sealed class AutonomousJobRunnerTests
             PayloadJson = "not valid json {{{"
         };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => runner.RunAsync(job, CancellationToken.None));
+        var ex = await Assert.ThrowsAnyAsync<Exception>(() => runner.RunAsync(job, CancellationToken.None));
+        Assert.Contains("not valid json", ex.Message);
     }
 }

@@ -28,6 +28,7 @@ public sealed class AuditMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+        context.Request.EnableBuffering();
         await _next(context);
 
         if (context.Request.Method is "POST" or "PATCH" or "PUT" or "DELETE")

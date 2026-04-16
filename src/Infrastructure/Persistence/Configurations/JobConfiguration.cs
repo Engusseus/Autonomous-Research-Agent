@@ -28,6 +28,7 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
 
         builder.HasIndex(x => x.Type);
         builder.HasIndex(x => x.Status);
+        builder.HasIndex(x => new { x.Status, x.CreatedAt });
         builder.HasIndex(x => x.TargetEntityId);
         builder.HasIndex(x => x.ParentJobId);
         builder.HasIndex(x => x.RetryCount);

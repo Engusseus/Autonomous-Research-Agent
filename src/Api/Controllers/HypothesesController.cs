@@ -1,5 +1,6 @@
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Api.Middleware;
 using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.Hypotheses;
 using AutonomousResearchAgent.Domain.Enums;
@@ -36,6 +37,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
     }
 
     [HttpPost]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(HypothesisResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -52,6 +54,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
     }
 
     [HttpPut("{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(HypothesisResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -70,6 +73,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
     }
 
     [HttpPut("{id:guid}/status")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(HypothesisResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -82,6 +86,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
     }
 
     [HttpDelete("{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -99,6 +104,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
     }
 
     [HttpPost("{id:guid}/papers")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(HypothesisPaperResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -110,6 +116,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
     }
 
     [HttpDelete("{id:guid}/papers/{paperId:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

@@ -1,6 +1,7 @@
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.LiteratureReviews;
 using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Api.Middleware;
 using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.LiteratureReviews;
 using Microsoft.AspNetCore.Authorization;
@@ -54,6 +55,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     }
 
     [HttpPost]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(LiteratureReviewDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -74,6 +76,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     }
 
     [HttpDelete("{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

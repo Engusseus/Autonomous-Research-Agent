@@ -1,6 +1,7 @@
 using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Collections;
 using AutonomousResearchAgent.Api.Extensions;
+using AutonomousResearchAgent.Api.Middleware;
 using AutonomousResearchAgent.Application.Collections;
 using AutonomousResearchAgent.Application.Common;
 using AutonomousResearchAgent.Application.Export;
@@ -70,6 +71,7 @@ public sealed class CollectionsController(
     }
 
     [HttpPost]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(CollectionResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -83,6 +85,7 @@ public sealed class CollectionsController(
     }
 
     [HttpPut("{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(CollectionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -96,6 +99,7 @@ public sealed class CollectionsController(
     }
 
     [HttpDelete("{id:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -107,6 +111,7 @@ public sealed class CollectionsController(
     }
 
     [HttpPost("{id:guid}/papers/{paperId:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -120,6 +125,7 @@ public sealed class CollectionsController(
     }
 
     [HttpDelete("{id:guid}/papers/{paperId:guid}")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -132,6 +138,7 @@ public sealed class CollectionsController(
     }
 
     [HttpPut("{id:guid}/papers/reorder")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -166,6 +173,7 @@ public sealed class CollectionsController(
     }
 
     [HttpPost("{id:guid}/share")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(typeof(ShareCollectionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -178,6 +186,7 @@ public sealed class CollectionsController(
     }
 
     [HttpDelete("{id:guid}/share")]
+    [Audited]
     [Authorize(Policy = PolicyNames.EditAccess)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

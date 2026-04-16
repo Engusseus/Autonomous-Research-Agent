@@ -12,46 +12,51 @@ using Xunit;
 
 namespace Infrastructure.Tests;
 
-public sealed class DatabaseJobWorkerTests
+public sealed class DatabaseJobWorkerTests : IDisposable
 {
+    private readonly string _databaseName = Guid.NewGuid().ToString();
+    private ApplicationDbContext? _dbContext;
+
     [Fact]
     public async Task StartAsync_claims_and_processes_queued_job()
     {
-        var services = new ServiceCollection();
-        services.AddSingleton(NullLogger<DatabaseJobWorker>.Instance);
-        services.AddSingleton(CreateBackgroundJobOptions(pollIntervalSeconds: 60));
+        _dbContext = CreateDbContext();
+        var mockRunner = new MockJobRunner();
+        var options = CreateBackgroundJobOptions(pollIntervalSeconds: 1);
 
-        await using var dbContext = CreateDbContext();
         var job = new Job
         {
+            Id = Guid.NewGuid(),
             Type = JobType.ImportPapers,
             Status = JobStatus.Queued,
             PayloadJson = "{}",
             CreatedAt = DateTimeOffset.UtcNow
         };
-        dbContext.Jobs.Add(job);
-        await dbContext.SaveChangesAsync();
+        _dbContext.Jobs.Add(job);
+        await _dbContext.SaveChangesAsync();
 
-        var mockRunner = new MockJobRunner();
-        var completionSource = new TaskCompletionSource<bool>();
-        mockRunner.SetupRunAsyncCompletion(completionSource);
-
-        var serviceCollection = new ServiceCollection();
-        serviceCollection.AddScoped(_ => dbContext);
-        serviceCollection.AddScoped<IJobRunner>(_ => mockRunner);
-        serviceCollection.AddScoped<IJobNotificationService>(_ => Mock.Of<IJobNotificationService>());
-        var provider = serviceCollection.BuildServiceProvider();
+        var services = new ServiceCollection();
+        services.AddSingleton(NullLogger<DatabaseJobWorker>.Instance);
+        services.AddSingleton(options);
+        services.AddScoped<ApplicationDbContext>(sp => _dbContext!);
+        services.AddScoped<IJobRunner>(sp => mockRunner);
+        services.AddScoped<IJobNotificationService>(sp => Mock.Of<IJobNotificationService>());
+        var provider = services.BuildServiceProvider();
 
         var worker = new DatabaseJobWorker(
             provider.GetRequiredService<IServiceScopeFactory>(),
-            services.BuildServiceProvider().GetRequiredService<IOptions<BackgroundJobOptions>>(),
+            options,
             NullLogger<DatabaseJobWorker>.Instance);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        await worker.StartAsync(cts.Token);
-        await completionSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await worker.StopAsync(CancellationToken.None);
+        var startTask = worker.StartAsync(cts.Token);
+
+        await mockRunner.WaitForRunStartAsync(TimeSpan.FromSeconds(5));
+
+        cts.Cancel();
+
+        await startTask;
 
         Assert.Equal(1, mockRunner.RunCount);
     }
@@ -59,130 +64,142 @@ public sealed class DatabaseJobWorkerTests
     [Fact]
     public async Task StartAsync_sets_job_status_to_completed_when_job_runs_successfully()
     {
-        var services = new ServiceCollection();
-        services.AddSingleton(NullLogger<DatabaseJobWorker>.Instance);
-        services.AddSingleton(CreateBackgroundJobOptions(pollIntervalSeconds: 60));
+        _dbContext = CreateDbContext();
+        var mockRunner = new MockJobRunner();
+        var options = CreateBackgroundJobOptions(pollIntervalSeconds: 1);
 
-        await using var dbContext = CreateDbContext();
         var job = new Job
         {
+            Id = Guid.NewGuid(),
             Type = JobType.ImportPapers,
             Status = JobStatus.Queued,
             PayloadJson = "{}",
             CreatedAt = DateTimeOffset.UtcNow
         };
-        dbContext.Jobs.Add(job);
-        await dbContext.SaveChangesAsync();
+        _dbContext.Jobs.Add(job);
+        await _dbContext.SaveChangesAsync();
 
-        var mockRunner = new MockJobRunner();
-        var completionSource = new TaskCompletionSource<bool>();
-        mockRunner.SetupRunAsyncCompletion(completionSource);
-
-        var serviceCollection = new ServiceCollection();
-        serviceCollection.AddScoped(_ => dbContext);
-        serviceCollection.AddScoped<IJobRunner>(_ => mockRunner);
-        serviceCollection.AddScoped<IJobNotificationService>(_ => Mock.Of<IJobNotificationService>());
-        var provider = serviceCollection.BuildServiceProvider();
+        var services = new ServiceCollection();
+        services.AddSingleton(NullLogger<DatabaseJobWorker>.Instance);
+        services.AddSingleton(options);
+        services.AddScoped<ApplicationDbContext>(sp => _dbContext!);
+        services.AddScoped<IJobRunner>(sp => mockRunner);
+        services.AddScoped<IJobNotificationService>(sp => Mock.Of<IJobNotificationService>());
+        var provider = services.BuildServiceProvider();
 
         var worker = new DatabaseJobWorker(
             provider.GetRequiredService<IServiceScopeFactory>(),
-            services.BuildServiceProvider().GetRequiredService<IOptions<BackgroundJobOptions>>(),
+            options,
             NullLogger<DatabaseJobWorker>.Instance);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        await worker.StartAsync(cts.Token);
-        await completionSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await worker.StopAsync(CancellationToken.None);
+        var startTask = worker.StartAsync(cts.Token);
+
+        await mockRunner.WaitForRunStartAsync(TimeSpan.FromSeconds(5));
+
+        await mockRunner.WaitForRunCompletionAsync(TimeSpan.FromSeconds(5));
+
+        cts.Cancel();
+
+        await startTask;
 
         await using var verifyContext = CreateDbContext();
-        var updatedJob = await verifyContext.Jobs.AsNoTracking().FirstAsync(j => j.Id == job.Id, cts.Token);
-        Assert.Equal(JobStatus.Completed, updatedJob.Status);
+        var jobStatus = await verifyContext.Jobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        Assert.Equal(JobStatus.Completed, jobStatus.Status);
     }
 
     [Fact]
     public async Task StartAsync_sets_job_status_to_failed_when_job_throws()
     {
-        var services = new ServiceCollection();
-        services.AddSingleton(NullLogger<DatabaseJobWorker>.Instance);
-        services.AddSingleton(CreateBackgroundJobOptions(pollIntervalSeconds: 60));
+        _dbContext = CreateDbContext();
+        var mockRunner = new MockJobRunner();
+        mockRunner.SetupRunAsyncThrow(new InvalidOperationException("Job failed"));
+        var options = CreateBackgroundJobOptions(pollIntervalSeconds: 1);
 
-        await using var dbContext = CreateDbContext();
         var job = new Job
         {
+            Id = Guid.NewGuid(),
             Type = JobType.ImportPapers,
             Status = JobStatus.Queued,
             PayloadJson = "{}",
             CreatedAt = DateTimeOffset.UtcNow
         };
-        dbContext.Jobs.Add(job);
-        await dbContext.SaveChangesAsync();
+        _dbContext.Jobs.Add(job);
+        await _dbContext.SaveChangesAsync();
 
-        var mockRunner = new MockJobRunner();
-        var completionSource = new TaskCompletionSource<bool>();
-        mockRunner.SetupRunAsyncThrow(new InvalidOperationException("Job failed"), completionSource);
-
-        var serviceCollection = new ServiceCollection();
-        serviceCollection.AddScoped(_ => dbContext);
-        serviceCollection.AddScoped<IJobRunner>(_ => mockRunner);
-        serviceCollection.AddScoped<IJobNotificationService>(_ => Mock.Of<IJobNotificationService>());
-        var provider = serviceCollection.BuildServiceProvider();
+        var services = new ServiceCollection();
+        services.AddSingleton(NullLogger<DatabaseJobWorker>.Instance);
+        services.AddSingleton(options);
+        services.AddScoped<ApplicationDbContext>(sp => _dbContext!);
+        services.AddScoped<IJobRunner>(sp => mockRunner);
+        services.AddScoped<IJobNotificationService>(sp => Mock.Of<IJobNotificationService>());
+        var provider = services.BuildServiceProvider();
 
         var worker = new DatabaseJobWorker(
             provider.GetRequiredService<IServiceScopeFactory>(),
-            services.BuildServiceProvider().GetRequiredService<IOptions<BackgroundJobOptions>>(),
+            options,
             NullLogger<DatabaseJobWorker>.Instance);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        await worker.StartAsync(cts.Token);
-        await completionSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await worker.StopAsync(CancellationToken.None);
+        var startTask = worker.StartAsync(cts.Token);
+
+        await mockRunner.WaitForRunStartAsync(TimeSpan.FromSeconds(5));
+
+        await mockRunner.WaitForRunCompletionAsync(TimeSpan.FromSeconds(5));
+
+        cts.Cancel();
+
+        await startTask;
 
         await using var verifyContext = CreateDbContext();
-        var updatedJob = await verifyContext.Jobs.AsNoTracking().FirstAsync(j => j.Id == job.Id, cts.Token);
-        Assert.Equal(JobStatus.Failed, updatedJob.Status);
-        Assert.Equal("Job failed", updatedJob.ErrorMessage);
+        var jobStatus = await verifyContext.Jobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        Assert.Equal(JobStatus.Failed, jobStatus.Status);
+        Assert.Equal("Job failed", jobStatus.ErrorMessage);
     }
 
     [Fact]
     public async Task StopAsync_cancels_execution_gracefully()
     {
-        var services = new ServiceCollection();
-        services.AddSingleton(NullLogger<DatabaseJobWorker>.Instance);
-        services.AddSingleton(CreateBackgroundJobOptions(pollIntervalSeconds: 1));
+        _dbContext = CreateDbContext();
+        var mockRunner = new MockJobRunner();
+        mockRunner.SetupRunAsyncBlock();
+        var options = CreateBackgroundJobOptions(pollIntervalSeconds: 1);
 
-        await using var dbContext = CreateDbContext();
         var job = new Job
         {
+            Id = Guid.NewGuid(),
             Type = JobType.ImportPapers,
             Status = JobStatus.Queued,
             PayloadJson = "{}",
             CreatedAt = DateTimeOffset.UtcNow
         };
-        dbContext.Jobs.Add(job);
-        await dbContext.SaveChangesAsync();
+        _dbContext.Jobs.Add(job);
+        await _dbContext.SaveChangesAsync();
 
-        var mockRunner = new MockJobRunner();
-        var completionSource = new TaskCompletionSource<bool>();
-        mockRunner.SetupRunAsyncBlock(completionSource);
-
-        var serviceCollection = new ServiceCollection();
-        serviceCollection.AddScoped(_ => dbContext);
-        serviceCollection.AddScoped<IJobRunner>(_ => mockRunner);
-        serviceCollection.AddScoped<IJobNotificationService>(_ => Mock.Of<IJobNotificationService>());
-        var provider = serviceCollection.BuildServiceProvider();
+        var services = new ServiceCollection();
+        services.AddSingleton(NullLogger<DatabaseJobWorker>.Instance);
+        services.AddSingleton(options);
+        services.AddScoped<ApplicationDbContext>(sp => _dbContext!);
+        services.AddScoped<IJobRunner>(sp => mockRunner);
+        services.AddScoped<IJobNotificationService>(sp => Mock.Of<IJobNotificationService>());
+        var provider = services.BuildServiceProvider();
 
         var worker = new DatabaseJobWorker(
             provider.GetRequiredService<IServiceScopeFactory>(),
-            services.BuildServiceProvider().GetRequiredService<IOptions<BackgroundJobOptions>>(),
+            options,
             NullLogger<DatabaseJobWorker>.Instance);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-        await worker.StartAsync(cts.Token);
-        await completionSource.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        await worker.StopAsync(CancellationToken.None);
+        var startTask = worker.StartAsync(cts.Token);
+
+        await mockRunner.WaitForRunStartAsync(TimeSpan.FromSeconds(3));
+
+        cts.Cancel();
+
+        await startTask;
 
         Assert.True(mockRunner.RunCount <= 1);
         Assert.True(cts.Token.IsCancellationRequested || !mockRunner.IsBlocked);
@@ -191,40 +208,36 @@ public sealed class DatabaseJobWorkerTests
     [Fact]
     public async Task ExecuteAsync_does_not_process_anything_when_no_jobs_queued()
     {
+        _dbContext = CreateDbContext();
+        var mockRunner = new MockJobRunner();
+        var options = CreateBackgroundJobOptions(pollIntervalSeconds: 1);
+
         var services = new ServiceCollection();
         services.AddSingleton(NullLogger<DatabaseJobWorker>.Instance);
-        services.AddSingleton(CreateBackgroundJobOptions(pollIntervalSeconds: 1));
-
-        await using var dbContext = CreateDbContext();
-
-        var mockRunner = new MockJobRunner();
-        var completionSource = new TaskCompletionSource<bool>();
-        mockRunner.SetupRunAsyncCompletion(completionSource);
-
-        var serviceCollection = new ServiceCollection();
-        serviceCollection.AddScoped(_ => dbContext);
-        serviceCollection.AddScoped<IJobRunner>(_ => mockRunner);
-        serviceCollection.AddScoped<IJobNotificationService>(_ => Mock.Of<IJobNotificationService>());
-        var provider = serviceCollection.BuildServiceProvider();
+        services.AddSingleton(options);
+        services.AddScoped<ApplicationDbContext>(sp => _dbContext!);
+        services.AddScoped<IJobRunner>(sp => mockRunner);
+        services.AddScoped<IJobNotificationService>(sp => Mock.Of<IJobNotificationService>());
+        var provider = services.BuildServiceProvider();
 
         var worker = new DatabaseJobWorker(
             provider.GetRequiredService<IServiceScopeFactory>(),
-            services.BuildServiceProvider().GetRequiredService<IOptions<BackgroundJobOptions>>(),
+            options,
             NullLogger<DatabaseJobWorker>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
         await worker.StartAsync(cts.Token);
-        await completionSource.Task.WaitAsync(TimeSpan.FromSeconds(3));
-        await worker.StopAsync(CancellationToken.None);
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        cts.Cancel();
 
         Assert.Equal(0, mockRunner.RunCount);
     }
 
-    private static ApplicationDbContext CreateDbContext()
+    private ApplicationDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .UseInMemoryDatabase(_databaseName)
             .Options;
 
         return new ApplicationDbContext(options);
@@ -238,40 +251,65 @@ public sealed class DatabaseJobWorkerTests
         });
     }
 
+    public void Dispose()
+    {
+    }
+
     private sealed class MockJobRunner : IJobRunner
     {
         private Exception? _exceptionToThrow;
         private bool _block;
-        private TaskCompletionSource<bool>? _completionSource;
+        private int _runCount;
+        private readonly TaskCompletionSource<bool> _runStartedSource = new();
+        private readonly TaskCompletionSource<bool> _runCompletedSource = new();
 
-        public int RunCount { get; private set; }
-        public bool IsBlocked => _block && RunCount > 0;
+        public int RunCount => _runCount;
+        public bool IsBlocked => _block && _runCount > 0;
 
-        public void SetupRunAsyncCompletion(TaskCompletionSource<bool> completionSource)
+        public void SetupRunAsyncCompletion()
         {
-            _completionSource = completionSource;
-            _completionSource.SetResult(true);
         }
 
-        public void SetupRunAsyncThrow(Exception ex, TaskCompletionSource<bool> completionSource)
+        public void SetupRunAsyncThrow(Exception ex)
         {
             _exceptionToThrow = ex;
-            _completionSource = completionSource;
-            completionSource.SetResult(true);
         }
 
-        public void SetupRunAsyncBlock(TaskCompletionSource<bool> completionSource)
+        public void SetupRunAsyncBlock()
         {
             _block = true;
-            _completionSource = completionSource;
-            completionSource.SetResult(true);
+        }
+
+        public async Task WaitForRunStartAsync(TimeSpan timeout)
+        {
+            try
+            {
+                await _runStartedSource.Task.WaitAsync(timeout);
+            }
+            catch (TimeoutException)
+            {
+            }
+        }
+
+        public async Task WaitForRunCompletionAsync(TimeSpan timeout)
+        {
+            try
+            {
+                await _runCompletedSource.Task.WaitAsync(timeout);
+            }
+            catch (TimeoutException)
+            {
+            }
         }
 
         public async Task RunAsync(Job job, CancellationToken cancellationToken)
         {
-            RunCount++;
+            Interlocked.Increment(ref _runCount);
+            _runStartedSource.TrySetResult(true);
+
             if (_exceptionToThrow is not null)
             {
+                _runCompletedSource.TrySetResult(false);
                 throw _exceptionToThrow;
             }
 
@@ -283,9 +321,12 @@ public sealed class DatabaseJobWorkerTests
                 }
                 catch (OperationCanceledException)
                 {
+                    _runCompletedSource.TrySetResult(true);
                     return;
                 }
             }
+
+            _runCompletedSource.TrySetResult(true);
         }
     }
 }

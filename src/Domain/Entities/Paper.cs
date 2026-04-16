@@ -30,5 +30,4 @@ public sealed class Paper : AuditableEntity
     public ICollection<PaperDocument> Documents { get; set; } = [];
     public ICollection<PaperConcept> Concepts { get; set; } = [];
     public ICollection<PaperTag> PaperTags { get; set; } = [];
-    public string? SearchVector { get; set; }
 }

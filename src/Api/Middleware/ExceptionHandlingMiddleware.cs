@@ -64,7 +64,7 @@ public sealed class ExceptionHandlingMiddleware(
         {
             Title = title,
             Status = statusCode,
-            Detail = isDevelopment ? exception.Message : "An unexpected error occurred.",
+            Detail = "An unexpected error occurred.",
             Instance = context.Request.Path
         };
 
