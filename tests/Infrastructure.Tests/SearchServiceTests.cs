@@ -91,7 +91,7 @@ public sealed class SearchServiceTests
 
     private static SearchService CreateSearchService(ApplicationDbContext dbContext, IEmbeddingService embeddingService)
     {
-        return new SearchService(dbContext, embeddingService, NullLogger<SearchService>.Instance);
+        return new SearchService(new FakeDbContextFactory(dbContext), embeddingService, Microsoft.Extensions.Options.Options.Create(new AutonomousResearchAgent.Infrastructure.Services.SearchWeightsOptions()), NullLogger<SearchService>.Instance);
     }
 
     private static ApplicationDbContext CreateDbContext()
@@ -160,4 +160,8 @@ public sealed class SearchServiceTests
         public Task<float[]> GenerateQueryEmbeddingAsync(string query, CancellationToken cancellationToken)
             => Task.FromResult(queryEmbedding);
     }
+public class FakeDbContextFactory(ApplicationDbContext context) : Microsoft.EntityFrameworkCore.IDbContextFactory<ApplicationDbContext>
+{
+    public ApplicationDbContext CreateDbContext() => context;
+}
 }

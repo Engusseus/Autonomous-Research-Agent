@@ -87,7 +87,8 @@ public sealed class AutonomousJobRunnerTests
             _openRouterChatClientMock.Object,
             mockSemanticScholarClient.Object,
             _openRouterOptions,
-            _loggerFactory);
+            Microsoft.Extensions.Options.Options.Create(new AutonomousResearchAgent.Infrastructure.Services.SummaryOptions()),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
     }
 
     [Fact]

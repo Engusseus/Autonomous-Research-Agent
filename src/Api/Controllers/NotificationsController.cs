@@ -19,7 +19,7 @@ public sealed class NotificationsController(INotificationService notificationSer
         [FromQuery] NotificationQueryRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? throw new UnauthorizedAccessException();
         var result = await notificationService.ListAsync(request.ToApplicationModel(userId), cancellationToken);
         return Ok(result.ToPagedResponse(item => item.ToDto()));
     }
@@ -29,7 +29,7 @@ public sealed class NotificationsController(INotificationService notificationSer
     [ProducesResponseType(typeof(UnreadCountResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<UnreadCountResponse>> GetUnreadCount(CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? throw new UnauthorizedAccessException();
         var count = await notificationService.GetUnreadCountAsync(userId, cancellationToken);
         return Ok(new UnreadCountResponse(count));
     }
@@ -49,7 +49,7 @@ public sealed class NotificationsController(INotificationService notificationSer
     [ProducesResponseType(typeof(MarkAllReadResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<MarkAllReadResponse>> MarkAllAsRead(CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? throw new UnauthorizedAccessException();
         var count = await notificationService.MarkAllAsReadAsync(userId, cancellationToken);
         return Ok(new MarkAllReadResponse(count));
     }

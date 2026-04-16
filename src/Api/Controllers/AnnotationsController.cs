@@ -4,6 +4,7 @@ using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Application.Annotations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Authentication;
 
 namespace AutonomousResearchAgent.Api.Controllers;
 
@@ -21,7 +22,7 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
         var userId = User.GetUserId();
         if (userId is null)
             return Unauthorized();
-        var annotations = await annotationService.ListForPaperAsync(paperId, userId.Value, cancellationToken);
+        var annotations = await annotationService.ListForPaperAsync(paperId, Guid.Empty, cancellationToken);
         return Ok(annotations.Select(a => new AnnotationResponse(
             a.Id,
             a.PaperId,
@@ -49,11 +50,11 @@ public sealed class AnnotationsController(IAnnotationService annotationService) 
     {
         var userId = User.GetUserId();
         if (userId is null)
-            throw new AuthenticationException("User ID not found in token");
+            return Unauthorized();
 
         var command = new CreateAnnotationCommand(
             paperId,
-            userId.Value,
+            Guid.Empty,
             request.ChunkId,
             request.Page,
             request.OffsetStart,

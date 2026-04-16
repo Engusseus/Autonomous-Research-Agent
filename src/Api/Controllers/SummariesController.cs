@@ -97,9 +97,9 @@ public sealed class SummariesController(
     [ProducesResponseType(typeof(AbTestSessionDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<AbTestSessionDto>> CreateAbTest(Guid paperId, [FromBody] AutonomousResearchAgent.Api.Contracts.Summaries.CreateAbTestRequest request, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? throw new UnauthorizedAccessException();
         var appRequest = request.ToApplicationModel();
-        var created = await summarizationService.CreateAbTestSessionAsync(appRequest with { PaperId = paperId }, userId, cancellationToken);
+        var created = await summarizationService.CreateAbTestSessionAsync(appRequest with { PaperId = paperId }, Guid.Empty, cancellationToken);
         return CreatedAtAction(nameof(GetAbTestSession), new { sessionId = created.Id }, created.ToDto());
     }
 

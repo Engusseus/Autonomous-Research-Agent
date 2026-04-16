@@ -19,7 +19,7 @@ public sealed class SavedSearchesController(ISavedSearchService savedSearchServi
         [FromQuery] SavedSearchQueryRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? throw new UnauthorizedAccessException();
         var result = await savedSearchService.ListAsync(request.ToApplicationModel(userId), cancellationToken);
         return Ok(result.ToPagedResponse(item => item.ToDto()));
     }
@@ -42,7 +42,7 @@ public sealed class SavedSearchesController(ISavedSearchService savedSearchServi
         [FromBody] CreateSavedSearchRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? throw new UnauthorizedAccessException();
         var created = await savedSearchService.CreateAsync(request.ToApplicationModel(userId), cancellationToken);
         return CreatedAtAction(nameof(GetSavedSearch), new { id = created.Id }, created.ToDto());
     }

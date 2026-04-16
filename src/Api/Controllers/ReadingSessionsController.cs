@@ -22,7 +22,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
         [FromQuery] string? status = null,
         CancellationToken cancellationToken = default)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? throw new UnauthorizedAccessException();
         var query = new ReadingSessionQuery(userId, status, pageNumber, pageSize);
         var result = await readingSessionService.ListAsync(query, cancellationToken);
 
@@ -35,7 +35,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<ReadingSessionResponse>> GetReadingSession(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? throw new UnauthorizedAccessException();
         var result = await readingSessionService.GetByIdAsync(id, cancellationToken);
         if (result is null)
         {
@@ -58,7 +58,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
         [FromBody] CreateReadingSessionRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? throw new UnauthorizedAccessException();
         var command = new CreateReadingSessionCommand(userId, request.PaperId);
         var created = await readingSessionService.CreateAsync(command, cancellationToken);
         return CreatedAtAction(nameof(GetReadingSession), new { id = created.Id }, MapToResponse(created));
@@ -74,7 +74,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
         [FromBody] UpdateReadingSessionRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? throw new UnauthorizedAccessException();
         var existing = await readingSessionService.GetByIdAsync(id, cancellationToken);
         if (existing == null)
             return NotFound();
@@ -92,7 +92,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> DeleteReadingSession(Guid id, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var userId = GetUserId() ?? throw new UnauthorizedAccessException();
         var existing = await readingSessionService.GetByIdAsync(id, cancellationToken);
         if (existing == null)
             return NotFound();

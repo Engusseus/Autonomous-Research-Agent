@@ -185,7 +185,7 @@ public static class ContractMappingExtensions
         new(result.NewPapersCount, result.JobId);
 
     public static DuplicatePairResponse ToDto(this DuplicatePairModel model) =>
-        new(model.Id, model.PaperAId, model.PaperATitle, model.PaperBId, model.PaperBTitle, model.SimilarityScore, model.Status.ToString(), model.ReviewedByUserId, model.ReviewedAt, model.Notes, model.CreatedAt);
+        new(model.Id, model.PaperAId, model.PaperATitle, model.PaperBId, model.PaperBTitle, model.SimilarityScore, model.Status.ToString(), model.ReviewedByUserId, model.ReviewedAt?.UtcDateTime, model.Notes, model.CreatedAt);
 
     public static DuplicatesResponse ToDto(this DuplicatesResult result) =>
         new(result.Pairs.Select(p => p.ToDto()).ToList(), result.TotalCount, result.PendingCount);
