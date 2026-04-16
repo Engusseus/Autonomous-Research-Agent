@@ -16,8 +16,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     public async Task<ActionResult<IReadOnlyList<LiteratureReviewListItemDto>>> GetReviews(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        var reviews = await literatureReviewService.ListAsync(int.Parse(userId.Value.ToString()), cancellationToken);
+        var reviews = await literatureReviewService.ListAsync(userId, cancellationToken);
         return Ok(reviews.Select(r => new LiteratureReviewListItemDto(
             r.Id,
             r.Title,
@@ -35,8 +34,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     public async Task<ActionResult<LiteratureReviewDto>> GetReview(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        var review = await literatureReviewService.GetByIdAsync(id, int.Parse(userId.Value.ToString()), cancellationToken);
+        var review = await literatureReviewService.GetByIdAsync(id, userId, cancellationToken);
         if (review is null)
         {
             return NotFound();
@@ -60,9 +58,8 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     public async Task<ActionResult<LiteratureReviewDto>> CreateReview([FromBody] CreateLiteratureReviewRequest request, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
         var command = new CreateLiteratureReviewCommand(request.Title, request.ResearchQuestion, request.PaperIds);
-        var created = await literatureReviewService.CreateAsync(command, int.Parse(userId.Value.ToString()), cancellationToken);
+        var created = await literatureReviewService.CreateAsync(command, userId, cancellationToken);
         return CreatedAtAction(nameof(GetReview), new { id = created.Id }, new LiteratureReviewDto(
             created.Id,
             created.Title,
@@ -81,8 +78,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     public async Task<IActionResult> DeleteReview(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        await literatureReviewService.DeleteAsync(id, int.Parse(userId.Value.ToString()), cancellationToken);
+        await literatureReviewService.DeleteAsync(id, userId, cancellationToken);
         return NoContent();
     }
 
@@ -94,8 +90,7 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     public async Task<ActionResult<FileResult>> ExportMarkdown(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        var review = await literatureReviewService.GetByIdAsync(id, int.Parse(userId.Value.ToString()), cancellationToken);
+        var review = await literatureReviewService.GetByIdAsync(id, userId, cancellationToken);
         if (review is null)
             return NotFound();
         var markdown = await literatureReviewService.ExportToMarkdownAsync(id, cancellationToken);
@@ -110,13 +105,12 @@ public sealed class LiteratureReviewsController(ILiteratureReviewService literat
     public async Task<ActionResult<FileResult>> ExportPdf(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        var review = await literatureReviewService.GetByIdAsync(id, int.Parse(userId.Value.ToString()), cancellationToken);
+        var review = await literatureReviewService.GetByIdAsync(id, userId, cancellationToken);
         if (review is null)
             return NotFound();
         var pdfBytes = await literatureReviewService.ExportToPdfAsync(id, cancellationToken);
         return File(pdfBytes, "application/pdf", $"literature_review_{id}.pdf");
     }
 
-    private Guid? GetUserId() => User.GetUserId();
+    private int? GetUserId() => User.GetUserId();
 }

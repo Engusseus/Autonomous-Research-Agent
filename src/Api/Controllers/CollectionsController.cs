@@ -20,8 +20,7 @@ public sealed class CollectionsController(
     public async Task<ActionResult<IReadOnlyCollection<CollectionResponse>>> GetCollections(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        var collections = await collectionService.ListAsync(int.Parse(userId.Value.ToString()), cancellationToken);
+        var collections = await collectionService.ListAsync(userId, cancellationToken);
         return Ok(collections.Select(c => new CollectionResponse(
             c.Id, c.Name, c.Description, c.IsShared, c.PaperCount, c.SortOrder, c.CreatedAt, c.UpdatedAt)).ToList());
     }
@@ -53,8 +52,7 @@ public sealed class CollectionsController(
     public async Task<ActionResult<CollectionDetailResponse>> GetCollection(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        var collection = await collectionService.GetByIdAsync(id, int.Parse(userId.Value.ToString()), cancellationToken);
+        var collection = await collectionService.GetByIdAsync(id, userId, cancellationToken);
         return Ok(new CollectionDetailResponse(
             collection.Id,
             collection.Name,
@@ -77,7 +75,6 @@ public sealed class CollectionsController(
     public async Task<ActionResult<CollectionResponse>> CreateCollection([FromBody] CreateCollectionRequest request, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
         var command = new CreateCollectionCommand(userId, request.Name, request.Description, request.IsShared);
         var created = await collectionService.CreateAsync(command, cancellationToken);
         return CreatedAtAction(nameof(GetCollection), new { id = created.Id }, new CollectionResponse(
@@ -91,9 +88,8 @@ public sealed class CollectionsController(
     public async Task<ActionResult<CollectionResponse>> UpdateCollection(Guid id, [FromBody] UpdateCollectionRequest request, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
         var command = new UpdateCollectionCommand(request.Name, request.Description, request.IsShared);
-        var updated = await collectionService.UpdateAsync(id, command, int.Parse(userId.Value.ToString()), cancellationToken);
+        var updated = await collectionService.UpdateAsync(id, command, userId, cancellationToken);
         return Ok(new CollectionResponse(
             updated.Id, updated.Name, updated.Description, updated.IsShared, updated.PaperCount, updated.SortOrder, updated.CreatedAt, updated.UpdatedAt));
     }
@@ -105,8 +101,7 @@ public sealed class CollectionsController(
     public async Task<IActionResult> DeleteCollection(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        await collectionService.DeleteAsync(id, int.Parse(userId.Value.ToString()), cancellationToken);
+        await collectionService.DeleteAsync(id, userId, cancellationToken);
         return NoContent();
     }
 
@@ -118,9 +113,8 @@ public sealed class CollectionsController(
     public async Task<IActionResult> AddPaper(Guid id, Guid paperId, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
         var command = new AddPaperCommand(paperId);
-        await collectionService.AddPaperAsync(id, command, int.Parse(userId.Value.ToString()), cancellationToken);
+        await collectionService.AddPaperAsync(id, command, userId, cancellationToken);
         return NoContent();
     }
 
@@ -131,9 +125,8 @@ public sealed class CollectionsController(
     public async Task<IActionResult> RemovePaper(Guid id, Guid paperId, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
         var command = new RemovePaperCommand(paperId);
-        await collectionService.RemovePaperAsync(id, command, int.Parse(userId.Value.ToString()), cancellationToken);
+        await collectionService.RemovePaperAsync(id, command, userId, cancellationToken);
         return NoContent();
     }
 
@@ -144,9 +137,8 @@ public sealed class CollectionsController(
     public async Task<IActionResult> ReorderPapers(Guid id, [FromBody] ReorderPapersRequest request, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
         var command = new ReorderPapersCommand(request.PaperIds);
-        await collectionService.ReorderPapersAsync(id, command, int.Parse(userId.Value.ToString()), cancellationToken);
+        await collectionService.ReorderPapersAsync(id, command, userId, cancellationToken);
         return NoContent();
     }
 
@@ -158,8 +150,7 @@ public sealed class CollectionsController(
     public async Task<IActionResult> ExportCollection(Guid id, [FromQuery] string format, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        var collection = await collectionService.GetByIdAsync(id, int.Parse(userId.Value.ToString()), cancellationToken);
+        var collection = await collectionService.GetByIdAsync(id, userId, cancellationToken);
 
         if (string.Equals(format, "bibtex", StringComparison.OrdinalIgnoreCase))
         {
@@ -169,7 +160,7 @@ public sealed class CollectionsController(
             return File(System.Text.Encoding.UTF8.GetBytes(content), "application/x-bibtex", $"collection_{id}.bib");
         }
 
-        var zipBytes = await collectionService.ExportAsync(id, int.Parse(userId.Value.ToString()), cancellationToken);
+        var zipBytes = await collectionService.ExportAsync(id, userId, cancellationToken);
         return File(zipBytes, "application/zip", $"collection_{id}.zip");
     }
 
@@ -180,8 +171,7 @@ public sealed class CollectionsController(
     public async Task<ActionResult<ShareCollectionResponse>> ShareCollection(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        var token = await collectionService.GenerateShareTokenAsync(id, int.Parse(userId.Value.ToString()), cancellationToken);
+        var token = await collectionService.GenerateShareTokenAsync(id, userId, cancellationToken);
         var shareUrl = $"/{ApiConstants.ApiPrefix}/collections/shared/{token}";
         return Ok(new ShareCollectionResponse(token, shareUrl));
     }
@@ -193,10 +183,9 @@ public sealed class CollectionsController(
     public async Task<IActionResult> RevokeSharing(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        await collectionService.RevokeShareTokenAsync(id, int.Parse(userId.Value.ToString()), cancellationToken);
+        await collectionService.RevokeShareTokenAsync(id, userId, cancellationToken);
         return NoContent();
     }
 
-    private Guid? GetUserId() => User.GetUserId();
+    private int? GetUserId() => User.GetUserId();
 }

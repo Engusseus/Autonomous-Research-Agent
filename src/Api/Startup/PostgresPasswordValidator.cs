@@ -6,8 +6,7 @@ public sealed class PostgresPasswordValidator : IStartupFilter
     {
         return app =>
         {
-            var configuration = app.ApplicationServices.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
-            var connectionString = configuration.GetConnectionString("Postgres") ?? string.Empty;
+            var connectionString = app.Configuration.GetConnectionString("Postgres") ?? string.Empty;
 
             if (string.IsNullOrEmpty(connectionString))
             {

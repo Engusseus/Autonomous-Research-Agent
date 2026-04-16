@@ -31,7 +31,7 @@ public sealed class RecommendationsController(IRecommendationService recommendat
         return Ok(result.ToPagedResponse(MapToResponse));
     }
 
-    private Guid? GetUserId() => User.GetUserId();
+    private int? GetUserId() => User.GetUserId();
 
     private static PaperRecommendationResponse MapToResponse(PaperRecommendationModel model) =>
         new(

@@ -18,8 +18,7 @@ public sealed class WebhooksController(IWebhookService webhookService) : Control
     public async Task<ActionResult<IReadOnlyCollection<WebhookResponse>>> GetWebhooks(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        var webhooks = await webhookService.ListAsync(int.Parse(userId.Value.ToString()), cancellationToken);
+        var webhooks = await webhookService.ListAsync(userId, cancellationToken);
         return Ok(webhooks.Select(w => new WebhookResponse(
             w.Id,
             w.Url,
@@ -37,7 +36,6 @@ public sealed class WebhooksController(IWebhookService webhookService) : Control
         CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
 
         if (request.Events.Count == 0)
         {
@@ -68,7 +66,7 @@ public sealed class WebhooksController(IWebhookService webhookService) : Control
             });
         }
 
-        var command = new CreateWebhookCommand(int.Parse(userId.Value.ToString()), request.Url, request.Events);
+        var command = new CreateWebhookCommand(userId, request.Url, request.Events);
         var webhook = await webhookService.CreateAsync(command, cancellationToken);
 
         return CreatedAtAction(nameof(GetWebhooks), new WebhookCreatedResponse(
@@ -85,12 +83,11 @@ public sealed class WebhooksController(IWebhookService webhookService) : Control
     public async Task<IActionResult> DeleteWebhook(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        await webhookService.DeleteAsync(id, int.Parse(userId.Value.ToString()), cancellationToken);
+        await webhookService.DeleteAsync(id, userId, cancellationToken);
         return NoContent();
     }
 
-    private Guid? GetUserId() => User.GetUserId();
+    private int? GetUserId() => User.GetUserId();
 }
 
 public sealed record WebhookResponse(

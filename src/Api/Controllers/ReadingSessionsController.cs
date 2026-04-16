@@ -23,8 +23,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
         CancellationToken cancellationToken = default)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        var query = new ReadingSessionQuery(int.Parse(userId.Value.ToString()), status, pageNumber, pageSize);
+        var query = new ReadingSessionQuery(userId, status, pageNumber, pageSize);
         var result = await readingSessionService.ListAsync(query, cancellationToken);
 
         return Ok(result.ToPagedResponse(MapToResponse));
@@ -37,13 +36,12 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
     public async Task<ActionResult<ReadingSessionResponse>> GetReadingSession(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
         var result = await readingSessionService.GetByIdAsync(id, cancellationToken);
         if (result is null)
         {
             return NotFound();
         }
-        if (result.UserId != int.Parse(userId.Value.ToString()))
+        if (result.UserId != userId)
         {
             return Forbid();
         }
@@ -61,8 +59,7 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
         CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
-        var command = new CreateReadingSessionCommand(int.Parse(userId.Value.ToString()), request.PaperId);
+        var command = new CreateReadingSessionCommand(userId, request.PaperId);
         var created = await readingSessionService.CreateAsync(command, cancellationToken);
         return CreatedAtAction(nameof(GetReadingSession), new { id = created.Id }, MapToResponse(created));
     }
@@ -78,11 +75,10 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
         CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
         var existing = await readingSessionService.GetByIdAsync(id, cancellationToken);
         if (existing == null)
             return NotFound();
-        if (existing.UserId != int.Parse(userId.Value.ToString()))
+        if (existing.UserId != userId)
             return Forbid();
         var command = new UpdateReadingSessionCommand(request.Status, request.Notes);
         var updated = await readingSessionService.UpdateAsync(id, command, cancellationToken);
@@ -97,17 +93,16 @@ public sealed class ReadingSessionsController(IReadingSessionService readingSess
     public async Task<IActionResult> DeleteReadingSession(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (!userId.HasValue) return Unauthorized();
         var existing = await readingSessionService.GetByIdAsync(id, cancellationToken);
         if (existing == null)
             return NotFound();
-        if (existing.UserId != int.Parse(userId.Value.ToString()))
+        if (existing.UserId != userId)
             return Forbid();
         await readingSessionService.DeleteAsync(id, cancellationToken);
         return NoContent();
     }
 
-    private Guid? GetUserId() => User.GetUserId();
+    private int? GetUserId() => User.GetUserId();
 
     private static ReadingSessionResponse MapToResponse(ReadingSessionModel model) =>
         new(

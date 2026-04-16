@@ -95,6 +95,7 @@ export function pagination({ pageNumber, pageSize, totalCount }, onChange) {
   // Prev
   const prevBtn = h('button', {
     className: 'pagination-btn',
+    'aria-label': 'Previous page',
     disabled: pageNumber <= 1 ? '' : undefined,
     onClick: () => onChange(pageNumber - 1),
   }, '\u2190');
@@ -109,6 +110,7 @@ export function pagination({ pageNumber, pageSize, totalCount }, onChange) {
     } else {
       const btn = h('button', {
         className: `pagination-btn ${p === pageNumber ? 'active' : ''}`,
+        'aria-label': `Page ${p}`,
         onClick: () => onChange(p),
       }, String(p));
       controls.appendChild(btn);
@@ -118,6 +120,7 @@ export function pagination({ pageNumber, pageSize, totalCount }, onChange) {
   // Next
   const nextBtn = h('button', {
     className: 'pagination-btn',
+    'aria-label': 'Next page',
     onClick: () => onChange(pageNumber + 1),
   });
   nextBtn.textContent = '\u2192';
@@ -374,6 +377,7 @@ export function notificationBell({ onNavigate }) {
   const bellBtn = h('button', {
     className: 'bell-button',
     type: 'button',
+    'aria-label': 'Notifications',
     onClick: (e) => {
       e.stopPropagation();
       toggleDropdown();
