@@ -20,7 +20,8 @@ public sealed class NotificationsController(INotificationService notificationSer
         CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        var result = await notificationService.ListAsync(request.ToApplicationModel(userId), cancellationToken);
+        if (!userId.HasValue) return Unauthorized();
+        var result = await notificationService.ListAsync(request.ToApplicationModel(int.Parse(userId.Value.ToString())), cancellationToken);
         return Ok(result.ToPagedResponse(item => item.ToDto()));
     }
 
@@ -30,7 +31,8 @@ public sealed class NotificationsController(INotificationService notificationSer
     public async Task<ActionResult<UnreadCountResponse>> GetUnreadCount(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        var count = await notificationService.GetUnreadCountAsync(userId, cancellationToken);
+        if (!userId.HasValue) return Unauthorized();
+        var count = await notificationService.GetUnreadCountAsync(int.Parse(userId.Value.ToString()), cancellationToken);
         return Ok(new UnreadCountResponse(count));
     }
 
@@ -50,9 +52,10 @@ public sealed class NotificationsController(INotificationService notificationSer
     public async Task<ActionResult<MarkAllReadResponse>> MarkAllAsRead(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        var count = await notificationService.MarkAllAsReadAsync(userId, cancellationToken);
+        if (!userId.HasValue) return Unauthorized();
+        var count = await notificationService.MarkAllAsReadAsync(int.Parse(userId.Value.ToString()), cancellationToken);
         return Ok(new MarkAllReadResponse(count));
     }
 
-    private int? GetUserId() => User.GetUserId();
+    private Guid? GetUserId() => User.GetUserId();
 }

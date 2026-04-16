@@ -98,6 +98,7 @@ public sealed class SummariesController(
     public async Task<ActionResult<AbTestSessionDto>> CreateAbTest(Guid paperId, [FromBody] AutonomousResearchAgent.Api.Contracts.Summaries.CreateAbTestRequest request, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
+        if (!userId.HasValue) return Unauthorized();
         var appRequest = request.ToApplicationModel();
         var created = await summarizationService.CreateAbTestSessionAsync(appRequest with { PaperId = paperId }, userId, cancellationToken);
         return CreatedAtAction(nameof(GetAbTestSession), new { sessionId = created.Id }, created.ToDto());
@@ -140,6 +141,6 @@ public sealed class SummariesController(
         return Ok(result.ToDto());
     }
 
-    private int? GetUserId() => User.GetUserId();
+    private Guid? GetUserId() => User.GetUserId();
 }
 

@@ -2,6 +2,7 @@ using AutonomousResearchAgent.Api.Authorization;
 using AutonomousResearchAgent.Api.Contracts.Annotations;
 using AutonomousResearchAgent.Api.Extensions;
 using AutonomousResearchAgent.Application.Annotations;
+using AutonomousResearchAgent.Application.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 

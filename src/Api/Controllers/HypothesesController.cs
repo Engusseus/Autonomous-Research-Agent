@@ -67,8 +67,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
         var existing = await hypothesisService.GetByIdAsync(id, cancellationToken);
         if (existing == null)
             return NotFound();
-        if (existing.UserId != userId.Value)
-            return Forbid();
+        if (existing.UserId != int.Parse(userId.Value.ToString()))
             return Forbid();
         var command = new UpdateHypothesisCommand(request.Title, request.Description);
         var updated = await hypothesisService.UpdateAsync(id, command, cancellationToken);
@@ -100,7 +99,7 @@ public sealed class HypothesesController(IHypothesisService hypothesisService) :
         var existing = await hypothesisService.GetByIdAsync(id, cancellationToken);
         if (existing == null)
             return NotFound();
-        if (existing.UserId != userId.Value)
+        if (existing.UserId != int.Parse(userId.Value.ToString()))
             return Forbid();
         await hypothesisService.DeleteAsync(id, cancellationToken);
         return NoContent();

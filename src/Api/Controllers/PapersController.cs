@@ -123,6 +123,6 @@ public sealed class PapersController(
         return NoContent();
     }
 
-    private int? GetUserId() => User.GetUserId();
+    private Guid? GetUserId() => User.GetUserId();
 }
 
